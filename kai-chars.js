@@ -108,7 +108,7 @@
       box.append(thumb(c), info, rl);
       if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) { note(String(r), true); return; } note(''); const pb = $('#cprevbox'); pb.hidden = false; pb.style.display = 'grid'; $('#cprevname').textContent = c.name; $('#cprev').hidden = false; pb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           clearInterval(window.__cprevTimer); const t0 = performance.now();
-          window.__cprevTimer = setInterval(() => { if (pb.hidden || !KB.Le.has(c.name) && !KB.Ae()[c.name]) { clearInterval(window.__cprevTimer); return; } window.__cprevT = (performance.now() - t0) / 1000; KB.En(c.name); }, 50); }; box.append(b); }
+          window.__cprevTimer = setInterval(() => { if (pb.hidden || !document.body.contains(pb) || !document.querySelector('#cprev') || !KB.Le.has(c.name) && !KB.Ae()[c.name]) { clearInterval(window.__cprevTimer); return; } window.__cprevT = (performance.now() - t0) / 1000; KB.En(c.name); }, 50); }; box.append(b); }
       const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => remove(c); box.append(d);
       list.append(box);
     }
@@ -247,7 +247,7 @@
   // ------------------------------------------------------------ bang nhieu dang cua 1 nhan vat
   const SHEET = ['idle', 'happy', 'sad', 'cry', 'punch', 'run', 'sit', 'cheer'];
   const SHEET_VN = { idle: 'đứng', happy: 'vui', sad: 'buồn', cry: 'khóc', punch: 'đấm', run: 'chạy', sit: 'ngồi', cheer: 'giơ tay ăn mừng' };
-  const ALIAS = { idle: ['stand', 'relaxed', 'neutral'], happy: ['smile', 'grin'], sad: ['tired', 'slump', 'lonely', 'headhold', 'facepalm', 'knees', 'kneel'], cry: [], punch: ['guard', 'fist'], run: ['walk'], sit: ['sitphone', 'sitdesk', 'sitsad', 'crouch'], cheer: ['win', 'wave', 'lift'] };
+  const ALIAS = { idle: ['stand', 'relaxed', 'neutral'], happy: ['smile', 'grin', 'wave'], sad: ['tired', 'slump', 'lonely', 'headhold', 'facepalm', 'knees', 'kneel'], cry: [], punch: ['guard', 'fist'], run: ['walk'], sit: ['sitphone', 'sitdesk', 'sitsad', 'crouch'], cheer: ['win', 'lift'] };
   function aliasAll() {
     for (const [, ent] of KB.Le) { const p = ent.poses; for (const k of Object.keys(ALIAS)) if (p[k] && !p[k].__alias) for (const a of ALIAS[k]) if (!p[a]) { p[a] = p[k]; } }
   }
@@ -260,14 +260,62 @@
     if (st >= 0) out.push([st, last]);
     return out.filter(r => r[1] - r[0] > h * .08);
   }
+  // tach theo tung khoi hinh rieng (connected components), xep theo hang roi tu trai qua phai
+  function blobs(cv) {
+    const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    const B = Math.max(2, Math.round(Math.max(w, h) / 400)), gw = Math.ceil(w / B), gh = Math.ceil(h / B);
+    const occ = new Uint8Array(gw * gh), lab = new Int32Array(gw * gh).fill(-1);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 40) occ[((y / B) | 0) * gw + ((x / B) | 0)] = 1;
+    const comps = [];
+    for (let i = 0; i < occ.length; i++) {
+      if (!occ[i] || lab[i] >= 0) continue;
+      const id = comps.length, c = { id, n: 0, x0: 1e9, y0: 1e9, x1: -1, y1: -1, ids: [id] }, st = [i]; lab[i] = id;
+      while (st.length) {
+        const j = st.pop(), gx = j % gw, gy = (j / gw) | 0; c.n++;
+        if (gx < c.x0) c.x0 = gx; if (gx > c.x1) c.x1 = gx; if (gy < c.y0) c.y0 = gy; if (gy > c.y1) c.y1 = gy;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const nx = gx + dx, ny = gy + dy; if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+          const k = ny * gw + nx; if (occ[k] && lab[k] < 0) { lab[k] = id; st.push(k); }
+        }
+      }
+      comps.push(c);
+    }
+    if (!comps.length) return [];
+    const max = Math.max(...comps.map(c => c.n));
+    const big = comps.filter(c => c.n >= max * .15);
+    for (const c of comps) {                 // manh nho (nuoc mat, tia sang...) -> gop vao hinh gan nhat
+      if (big.includes(c) || c.n < max * .003) continue;
+      const cx = (c.x0 + c.x1) / 2, cy = (c.y0 + c.y1) / 2;
+      const host = big.find(b => { const mx = (b.x1 - b.x0) * .15, my = (b.y1 - b.y0) * .15; return cx >= b.x0 - mx && cx <= b.x1 + mx && cy >= b.y0 - my && cy <= b.y1 + my; });
+      if (host) { host.ids.push(c.id); host.x0 = Math.min(host.x0, c.x0); host.x1 = Math.max(host.x1, c.x1); host.y0 = Math.min(host.y0, c.y0); host.y1 = Math.max(host.y1, c.y1); }
+    }
+    // xep thu tu: theo hang, roi trai -> phai
+    big.sort((a, b) => a.y0 - b.y0);
+    const rows = [];
+    for (const b of big) {
+      const r = rows.find(r => { const cy = (b.y0 + b.y1) / 2; return cy >= r.y0 && cy <= r.y1; });
+      if (r) { r.items.push(b); r.y0 = Math.min(r.y0, b.y0); r.y1 = Math.max(r.y1, b.y1); } else rows.push({ y0: b.y0, y1: b.y1, items: [b] });
+    }
+    const out = [];
+    for (const r of rows) for (const b of r.items.sort((a, b) => a.x0 - b.x0)) {
+      const set = new Set(b.ids), X0 = b.x0 * B, Y0 = b.y0 * B, X1 = Math.min(w, (b.x1 + 1) * B), Y1 = Math.min(h, (b.y1 + 1) * B);
+      const pw = X1 - X0, ph = Y1 - Y0, im = new ImageData(pw, ph);
+      for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
+        const sx = X0 + x, sy = Y0 + y; if (!set.has(lab[((sy / B) | 0) * gw + ((sx / B) | 0)])) continue;
+        const si = (sy * w + sx) * 4, di = (y * pw + x) * 4; for (let k = 0; k < 4; k++) im.data[di + k] = d[si + k];
+      }
+      const c = document.createElement('canvas'); c.width = pw; c.height = ph; c.getContext('2d').putImageData(im, 0, 0);
+      out.push(c);
+    }
+    return out;
+  }
+  // 2 hinh gan nhu giong het nhau -> bo bot 1
+  function sig(cv) { const c = document.createElement('canvas'); c.width = c.height = 16; const g = c.getContext('2d'); g.drawImage(cv, 0, 0, 16, 16); const d = g.getImageData(0, 0, 16, 16).data, o = []; for (let i = 0; i < d.length; i += 4) o.push(d[i + 3] > 40 ? (d[i] + d[i + 1] + d[i + 2]) / 3 : -60); return o; }
+  function same(a, b) { const r = Math.abs(a.width / a.height - b.width / b.height); if (r > .08) return false; const x = sig(a), y = sig(b); let s = 0; for (let i = 0; i < x.length; i++) s += Math.abs(x[i] - y[i]); return s / x.length < 14; }
   async function splitSheet(name) {
     const ent = KB.Le.get(name); if (!ent) return 0;
     const cv = Object.values(ent.poses)[0], pieces = [];
-    for (const [y0, y1] of rowsOf(cv)) {
-      const band = document.createElement('canvas'); band.width = cv.width; band.height = y1 - y0 + 1;
-      band.getContext('2d').drawImage(cv, 0, y0, cv.width, band.height, 0, 0, cv.width, band.height);
-      for (const sg of segments(band)) { const pc = cropCols(band, sg[0], sg[1]); if (pc) pieces.push(pc); }
-    }
+    for (const pc of blobs(cv)) if (!pieces.some(q => same(q, pc))) pieces.push(pc);
     if (pieces.length < 2) return 0;
     const files = [];
     for (let i = 0; i < Math.min(pieces.length, SHEET.length); i++) {
