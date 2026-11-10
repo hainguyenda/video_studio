@@ -99,11 +99,12 @@
       const nm = document.createElement('b'); nm.textContent = c.name;
       const ty = document.createElement('span'); ty.className = 's'; ty.style.fontSize = '11px'; ty.textContent = KIND[c.kind] + (ok ? '' : ' · không dùng được ở tab này');
       info.append(nm, ty);
-      const role = document.createElement('select'); role.title = 'Vai trò gợi ý';
-      [['main', 'Chính'], ['shadow', 'Bóng đen'], ['other', 'Phụ']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; role.append(o); });
+      const role = document.createElement('select'); role.title = 'Vai trong phim';
+      [['main', 'Vai chính'], ['shadow', 'Bóng đen'], ['other', 'Vai phụ']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; role.append(o); });
       role.value = roles[c.name] || (chars.findIndex(x => x.name === c.name) === 0 ? 'main' : 'other');
       role.onchange = () => { roles[c.name] = role.value; store.set('kaiRoles', roles); sel.clear(); touched.clear(); renderMap(); };
-      box.append(thumb(c), info, role);
+      const rl = document.createElement('label'); rl.style.cssText = 'display:grid;gap:2px;font-size:11px;color:var(--mut)'; rl.append('Vai trong phim', role);
+      box.append(thumb(c), info, rl);
       if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) note(String(r), true); else note(''); }; box.append(b); }
       const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => remove(c); box.append(d);
       list.append(box);
@@ -127,13 +128,16 @@
     if (src === null) { box.innerHTML = '<span class="s">Code chưa đúng định dạng nên chưa đọc được nhân vật trong đó.</span>'; $('#capply').disabled = true; return; }
     if (!src.length) { box.innerHTML = '<span class="s">Trong code chưa có nhân vật nào (mục "who").</span>'; $('#capply').disabled = true; return; }
     $('#capply').disabled = false;
+    const hd = document.createElement('div'); hd.style.cssText = 'display:grid;grid-template-columns:minmax(80px,auto) auto 1fr;gap:8px;font-size:11px;color:var(--mut)';
+    hd.innerHTML = '<span>Đang có trong code</span><span></span><span>Đổi thành</span>'; box.append(hd);
+    const mine = new Set(all().map(c => c.name));
     for (const s of src) {
       if (!touched.has(s)) sel.set(s, suggest(s, m));
       const row = document.createElement('div'); row.style.cssText = 'display:grid;grid-template-columns:minmax(80px,auto) auto 1fr;gap:8px;align-items:center';
-      const a = document.createElement('code'); a.textContent = s;
+      const a = document.createElement('code'); a.textContent = s + (mine.has(s) ? ' ✓' : ''); if (mine.has(s)) a.title = 'Đã là nhân vật của bạn';
       const arrow = document.createElement('span'); arrow.textContent = '→';
       const s2 = document.createElement('select'); s2.style.minWidth = '0';
-      const keep = document.createElement('option'); keep.value = ''; keep.textContent = '— giữ nguyên —'; s2.append(keep);
+      const keep = document.createElement('option'); keep.value = ''; keep.textContent = mine.has(s) ? '— giữ nguyên (đã là nhân vật của bạn) —' : '— giữ nguyên —'; s2.append(keep);
       if (mc.length) { const g = document.createElement('optgroup'); g.label = 'Nhân vật của tôi'; mc.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; g.append(o); }); s2.append(g); }
       const g2 = document.createElement('optgroup'); g2.label = 'Mặc định'; DEFAULTS.concat(m === 'd3' ? ['robot'] : []).forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = DEF_LABEL[d] || d; g2.append(o); }); s2.append(g2);
       s2.value = sel.get(s) || ''; if (s2.value !== (sel.get(s) || '')) s2.value = '';
@@ -146,7 +150,7 @@
     let obj; try { obj = parseCode(); } catch (e) { note('Code chưa đúng nên chưa thể Apply: ' + e.message, true); return; }
     let n = 0;
     walkWho(obj, w => { const t = sel.get(w.toLowerCase()); if (t && t !== w.toLowerCase()) { n++; return t; } return w; });
-    if (!n) { note('Chưa có gì để thay. Hãy chọn nhân vật ở cột bên phải.', true); return; }
+    if (!n) { note('Code đã dùng nhân vật của bạn rồi, không cần thay nữa. Nếu muốn đổi, mở mục "Tùy chỉnh" để chọn, hoặc đổi vai ở Bước 2.', true); return; }
     undo.push($('#code').value);
     $('#code').value = JSON.stringify(obj, null, 1);
     $('#cundo').disabled = false; sel.clear(); touched.clear();

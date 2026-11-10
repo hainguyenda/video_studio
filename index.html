@@ -46,11 +46,15 @@ body.m-3d .v2{display:none!important}body:not(.m-3d) .d3{display:none!important}
 <details id="cpanel" class="card" style="padding:10px 12px" open><summary>Nhân vật <span id="ccount" class="s"></span> · <span id="cmodeName" class="s"></span></summary>
 <div class="row" style="gap:16px"><label style="grid-auto-flow:column;align-items:center;justify-content:start;gap:6px;color:var(--fg)"><input type="radio" name="cmode" id="cmdef" checked> Dùng nhân vật mặc định</label><label style="grid-auto-flow:column;align-items:center;justify-content:start;gap:6px;color:var(--fg)"><input type="radio" name="cmode" id="cmmine"> Dùng nhân vật của tôi</label></div>
 <div id="cbody" hidden>
-<div id="clist"></div>
-<div class="row"><label>Thêm ảnh nhân vật (tên file: ten__dang.png, nhiều file được)<input type="file" id="files" accept="image/*" multiple></label><label style="grid-auto-flow:column;align-items:center;justify-content:start;gap:6px;align-self:end;color:var(--fg)"><input type="checkbox" id="rmbg" checked> Tự xóa nền ảnh</label><label class="d3">Thêm mô hình 3D (.glb)<input type="file" id="glbf" accept=".glb,.gltf" multiple></label></div>
+<b>Bước 1 · Thêm nhân vật</b>
+<div class="row"><label>Chọn ảnh nhân vật (chọn nhiều ảnh cùng lúc được)<input type="file" id="files" accept="image/*" multiple></label><label style="grid-auto-flow:column;align-items:center;justify-content:start;gap:6px;align-self:end;color:var(--fg)"><input type="checkbox" id="rmbg" checked> Tự xóa nền ảnh</label><label class="d3">Thêm mô hình 3D (.glb)<input type="file" id="glbf" accept=".glb,.gltf" multiple></label></div>
 <details><summary class="s">Thêm nhân vật vẽ bằng code (AI viết)</summary><div class="row"><label>Tên nhân vật<input type="text" id="cname" placeholder="vd: minh"></label></div><textarea id="ccode" spellcheck="false" placeholder="Dán code nhân vật vào đây"></textarea><div class="row"><button id="cadd">Thêm nhân vật code</button><button id="copy3">Chép prompt nhân vật</button></div><canvas id="cprev" width="720" height="140" hidden style="width:100%;border:1px solid var(--line);border-radius:8px"></canvas></details>
-<b>Thay nhân vật trong code</b>
-<div id="cmap"></div>
+<b>Bước 2 · Chọn vai trong phim cho từng nhân vật</b>
+<span class="s" style="font-size:12px">Vai chính: nhân vật chính của phim. Bóng đen: kẻ cám dỗ thì thầm bên cạnh. Vai phụ: bạn bè, người thân, người qua đường.</span>
+<div id="clist"></div>
+<b>Bước 3 · Bấm Apply</b>
+<span class="s" style="font-size:12px">App tự thay nhân vật có sẵn trong code bằng nhân vật của bạn theo vai đã chọn, rồi bấm Xem trước để xem.</span>
+<details id="cmapbox"><summary class="s">Tùy chỉnh: tự chọn thay nhân vật nào (không bắt buộc)</summary><div id="cmap" style="margin-top:8px"></div></details>
 <div class="row"><button class="p" id="capply">Apply vào code</button><button id="cundo" disabled>Hoàn tác</button></div>
 <span id="cmsg" class="s"></span>
 </div></details>
