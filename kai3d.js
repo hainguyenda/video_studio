@@ -627,7 +627,15 @@ const ROBOT_URL = new URL('./lib/models/robot.glb', import.meta.url).href;
 const MODEL_ALIAS = { robot: ROBOT_URL };
 function modelUrl(spec) { return spec.model || MODEL_ALIAS[spec.who]; }
 function loadGLB(url) {
-  if (!GLB.has(url)) GLB.set(url, new Promise((res, rej) => loader.load(url, g => res(g), undefined, e => rej(new Error('khong tai duoc mo hinh 3D: ' + url)))));
+  if (!GLB.has(url)) GLB.set(url, new Promise((res, rej) => {
+    const fail = () => rej(new Error('khong tai duoc mo hinh 3D: ' + url));
+    // Neu may chu khong phuc vu .glb (vi du trong khung artifact), doc ban base64 di kem (.glb.b64.txt).
+    const viaB64 = () => fetch(url + '.b64.txt').then(r => { if (!r.ok) throw 0; return r.text(); }).then(t => {
+      const bin = atob(t.trim()), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      loader.parse(buf.buffer, '', g => res(g), fail);
+    }).catch(fail);
+    loader.load(url, g => res(g), undefined, viaB64);
+  }));
   return GLB.get(url);
 }
 const ROBOT_MAP = { stand: 'Idle', idle: 'Idle', relaxed: 'Idle', walk: 'Walking', run: 'Running', wave: 'Wave', cheer: 'Dance', win: 'Dance', dance: 'Dance', punch: 'Punch', sit: 'Sitting', yes: 'Yes', no: 'No', thumbsup: 'ThumbsUp', jump: 'Jump', death: 'Death', fall: 'Death', standup: 'Standing', walkjump: 'WalkJump', slump: 'No' };
