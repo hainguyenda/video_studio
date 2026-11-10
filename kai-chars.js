@@ -1,0 +1,240 @@
+// Video Studio by Kai - giao dien "Nhan vat": mac dinh / cua toi, nhieu nhan vat, Apply vao code.
+(function () {
+  'use strict';
+  const KB = window.__KB;
+  if (!KB) return;
+  const $ = s => document.querySelector(s);
+  const slug = n => String(n || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* bo qua */ } },
+  };
+
+  // ------------------------------------------------------------ luu tru lau dai (IndexedDB)
+  let dbp = null;
+  function db() {
+    if (!dbp) dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('kai-video-studio', 1);
+        r.onupgradeneeded = () => { const d = r.result; d.createObjectStore('imgs', { keyPath: 'name' }); d.createObjectStore('glbs', { keyPath: 'id' }); };
+        r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    });
+    return dbp;
+  }
+  const dbDo = (storeName, mode, fn) => db().then(d => new Promise((res, rej) => {
+    const t = d.transaction(storeName, mode), req = fn(t.objectStore(storeName));
+    t.oncomplete = () => res(req && req.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+  })).catch(() => undefined);
+
+  // ------------------------------------------------------------ du lieu nhan vat
+  const glbs = new Map();           // ten -> { buffer, anims, rev }
+  window.KaiChars = { rev: 0, imgs: () => KB.Le, glbs: () => glbs };
+  const bump = () => { window.KaiChars.rev++; };
+  const roles = store.get('kaiRoles', {});
+  const MODES = { vid: 'Video 2D', d25: 'Video 2.5D', d3: 'Video 3D', img: 'Ảnh' };
+  const mode = () => { const b = document.body.classList; return b.contains('m-img') ? 'img' : b.contains('m-25') ? 'd25' : b.contains('m-3d') ? 'd3' : 'vid'; };
+  const useMine = m => store.get('kaiMine_' + (m || mode()), false);
+
+  function all() {
+    const out = [];
+    for (const n of Object.keys(KB.Ae())) out.push({ name: n, kind: 'code' });
+    for (const n of KB.Le.keys()) out.push({ name: n, kind: 'img' });
+    for (const n of glbs.keys()) out.push({ name: n, kind: 'glb' });
+    return out;
+  }
+  const compat = (c, m) => c.kind === 'img' || (c.kind === 'code' && m !== 'd3') || (c.kind === 'glb' && m === 'd3');
+  const KIND = { img: 'ảnh', code: 'code', glb: 'mô hình 3D' };
+  const DEFAULTS = ['hoodie', 'hooded', 'hero', 'band', 'voice', 'friend', 'friend2', 'friend3', 'girl', 'mom', 'dad', 'kid', 'ghost'];
+  const DEF_LABEL = { hoodie: 'hoodie (mặc định)', hooded: 'hooded (mặc định)', hero: 'hero (mặc định)', band: 'band (mặc định)', voice: 'bóng đen (mặc định)', friend: 'friend (mặc định)', friend2: 'friend2 (mặc định)', friend3: 'friend3 (mặc định)', girl: 'girl (mặc định)', mom: 'mom (mặc định)', dad: 'dad (mặc định)', kid: 'kid (mặc định)', ghost: 'ghost (mặc định)' };
+
+  // ------------------------------------------------------------ doc / sua code JSON
+  function parseCode() {
+    const t = ($('#code').value || '').trim().replace(/^```(?:json|js|javascript)?/i, '').replace(/```$/, '').trim();
+    return JSON.parse(t);
+  }
+  function walkWho(o, fn) {
+    if (Array.isArray(o)) { o.forEach(x => walkWho(x, fn)); return; }
+    if (o && typeof o === 'object') for (const k of Object.keys(o)) {
+      if (k === 'chars') continue;
+      if (k === 'who' && typeof o[k] === 'string') { const n = fn(o[k]); if (n !== o[k]) o[k] = n; } else walkWho(o[k], fn);
+    }
+  }
+  function sourcesInCode() {
+    try { const seen = []; walkWho(parseCode(), w => { const l = w.toLowerCase(); if (!seen.includes(l)) seen.push(l); return w; }); return seen; } catch (e) { return null; }
+  }
+
+  // ------------------------------------------------------------ giao dien
+  const sel = new Map();             // nguon -> dich
+  const touched = new Set();         // nguon do nguoi dung tu chon
+  const undo = [];
+  const note = (t, bad) => { const e = $('#cmsg'); if (e) { e.textContent = t || ''; e.style.color = bad ? 'var(--acc)' : 'var(--mut)'; } };
+
+  function thumb(c) {
+    const cv = document.createElement('canvas'); cv.height = 44; cv.width = 44;
+    cv.style.cssText = 'height:44px;width:44px;border-radius:6px;background:repeating-conic-gradient(#8884 0 25%,#0000 0 50%) 50%/10px 10px';
+    const g = cv.getContext('2d');
+    if (c.kind === 'img') {
+      const p = KB.Le.get(c.name); const src = p && (p.poses.idle || p.poses.stand || Object.values(p.poses)[0]);
+      if (src) { const k = Math.min(40 / src.width, 40 / src.height); g.drawImage(src, 22 - src.width * k / 2, 42 - src.height * k, src.width * k, src.height * k); }
+    } else { g.fillStyle = '#8a8a96'; g.font = '700 15px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(c.kind === 'glb' ? '3D' : '{ }', 22, 22); }
+    return cv;
+  }
+
+  function render() {
+    const panel = $('#cpanel'); if (!panel) return;
+    const m = mode(), mine = useMine(m), chars = all();
+    $('#cmdef').checked = !mine; $('#cmmine').checked = mine;
+    $('#ccount').textContent = chars.length ? '(' + chars.length + ')' : '';
+    $('#cbody').hidden = !mine;
+    $('#cmodeName').textContent = MODES[m];
+    if (!mine) return;
+
+    const list = $('#clist'); list.innerHTML = '';
+    if (!chars.length) { const e = document.createElement('span'); e.className = 's'; e.textContent = 'Chưa có nhân vật nào. Bấm "Thêm nhân vật" bên dưới.'; list.append(e); }
+    for (const c of chars) {
+      const ok = compat(c, m), box = document.createElement('div');
+      box.style.cssText = 'display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;' + (ok ? '' : 'opacity:.5');
+      const info = document.createElement('div'); info.style.cssText = 'display:grid;gap:2px;min-width:0';
+      const nm = document.createElement('b'); nm.textContent = c.name;
+      const ty = document.createElement('span'); ty.className = 's'; ty.style.fontSize = '11px'; ty.textContent = KIND[c.kind] + (ok ? '' : ' · không dùng được ở tab này');
+      info.append(nm, ty);
+      const role = document.createElement('select'); role.title = 'Vai trò gợi ý';
+      [['main', 'Chính'], ['shadow', 'Bóng đen'], ['other', 'Phụ']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; role.append(o); });
+      role.value = roles[c.name] || (chars.findIndex(x => x.name === c.name) === 0 ? 'main' : 'other');
+      role.onchange = () => { roles[c.name] = role.value; store.set('kaiRoles', roles); sel.clear(); touched.clear(); renderMap(); };
+      box.append(thumb(c), info, role);
+      if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) note(String(r), true); else note(''); }; box.append(b); }
+      const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => remove(c); box.append(d);
+      list.append(box);
+    }
+    renderMap();
+  }
+
+  function suggest(src, m) {
+    const mc = all().filter(c => compat(c, m)); if (!mc.length) return '';
+    const r = c => roles[c.name] || (all().findIndex(x => x.name === c.name) === 0 ? 'main' : 'other');
+    const pick = role => mc.find(c => r(c) === role);
+    if (['hoodie', 'hooded', 'hero', 'band'].includes(src)) return (pick('main') || {}).name || '';
+    if (src === 'voice') return (pick('shadow') || {}).name || '';
+    if (DEFAULTS.includes(src)) { const o = mc.filter(c => r(c) === 'other'); if (!o.length) return ''; const idx = ['friend', 'friend2', 'friend3', 'girl', 'mom', 'dad', 'kid', 'ghost'].indexOf(src); return o[Math.max(0, idx) % o.length].name; }
+    return '';
+  }
+
+  function renderMap() {
+    const box = $('#cmap'); if (!box) return; box.innerHTML = '';
+    const m = mode(), src = sourcesInCode(), mc = all().filter(c => compat(c, m));
+    if (src === null) { box.innerHTML = '<span class="s">Code chưa đúng định dạng nên chưa đọc được nhân vật trong đó.</span>'; $('#capply').disabled = true; return; }
+    if (!src.length) { box.innerHTML = '<span class="s">Trong code chưa có nhân vật nào (mục "who").</span>'; $('#capply').disabled = true; return; }
+    $('#capply').disabled = false;
+    for (const s of src) {
+      if (!touched.has(s)) sel.set(s, suggest(s, m));
+      const row = document.createElement('div'); row.style.cssText = 'display:grid;grid-template-columns:minmax(80px,auto) auto 1fr;gap:8px;align-items:center';
+      const a = document.createElement('code'); a.textContent = s;
+      const arrow = document.createElement('span'); arrow.textContent = '→';
+      const s2 = document.createElement('select'); s2.style.minWidth = '0';
+      const keep = document.createElement('option'); keep.value = ''; keep.textContent = '— giữ nguyên —'; s2.append(keep);
+      if (mc.length) { const g = document.createElement('optgroup'); g.label = 'Nhân vật của tôi'; mc.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; g.append(o); }); s2.append(g); }
+      const g2 = document.createElement('optgroup'); g2.label = 'Mặc định'; DEFAULTS.concat(m === 'd3' ? ['robot'] : []).forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = DEF_LABEL[d] || d; g2.append(o); }); s2.append(g2);
+      s2.value = sel.get(s) || ''; if (s2.value !== (sel.get(s) || '')) s2.value = '';
+      s2.onchange = () => { touched.add(s); sel.set(s, s2.value); };
+      row.append(a, arrow, s2); box.append(row);
+    }
+  }
+
+  function apply() {
+    let obj; try { obj = parseCode(); } catch (e) { note('Code chưa đúng nên chưa thể Apply: ' + e.message, true); return; }
+    let n = 0;
+    walkWho(obj, w => { const t = sel.get(w.toLowerCase()); if (t && t !== w.toLowerCase()) { n++; return t; } return w; });
+    if (!n) { note('Chưa có gì để thay. Hãy chọn nhân vật ở cột bên phải.', true); return; }
+    undo.push($('#code').value);
+    $('#code').value = JSON.stringify(obj, null, 1);
+    $('#cundo').disabled = false; sel.clear(); touched.clear();
+    note('Đã thay ' + n + ' chỗ trong code. Bấm "Hoàn tác" nếu muốn quay lại.');
+    KB.reload(); KB.load(); renderMap();
+  }
+  function doUndo() {
+    if (!undo.length) return; $('#code').value = undo.pop(); $('#cundo').disabled = !undo.length; sel.clear(); touched.clear();
+    note('Đã hoàn tác.'); KB.reload(); KB.load(); renderMap();
+  }
+
+  async function remove(c) {
+    if (c.kind === 'code') { const A = KB.Ae(); delete A[c.name]; KB.saveAe(); }
+    if (c.kind === 'img') {
+      KB.Le.delete(c.name);
+      const recs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
+      for (const r of recs) if (r.slug === c.name) await dbDo('imgs', 'readwrite', s => s.delete(r.name));
+    }
+    if (c.kind === 'glb') { glbs.delete(c.name); await dbDo('glbs', 'readwrite', s => s.delete(c.name)); }
+    bump(); KB.reload(); KB.Ut(); sel.clear(); touched.clear(); render();
+  }
+
+  // ------------------------------------------------------------ them nhan vat
+  function saveImgFiles(files) {
+    const rm = !!($('#rmbg') && $('#rmbg').checked);
+    files.forEach(f => dbDo('imgs', 'readwrite', s => s.put({ name: f.name, slug: slug(f.name.replace(/\.[^.]+$/, '').split('__')[0]), blob: f, rm })));
+  }
+  async function addGlb(files) {
+    for (const f of files) {
+      const id = slug(f.name.replace(/\.[^.]+$/, ''));
+      if (!id) continue;
+      if (f.size > 40 * 1024 * 1024) { note('Mô hình "' + f.name + '" lớn hơn 40MB. Hãy giảm dung lượng rồi thử lại.', true); continue; }
+      try {
+        const buffer = await f.arrayBuffer();
+        await window.Kai3DReady;
+        const info = await window.Kai3D.inspectGLB(buffer);
+        glbs.set(id, { buffer, anims: info.anims, rev: Date.now() });
+        await dbDo('glbs', 'readwrite', s => s.put({ id, name: f.name, buffer, anims: info.anims }));
+        note('Đã thêm mô hình 3D "' + id + '". ' + (info.anims.length ? 'Động tác có sẵn: ' + info.anims.join(', ') + '. Ghi tên động tác vào "pose" trong code.' : 'Mô hình này không có động tác, nhân vật sẽ đứng yên.') + (info.skinned ? '' : ' (Không có xương nên chỉ đứng yên.)'));
+      } catch (e) { note('Không đọc được mô hình "' + f.name + '". Hãy dùng file .glb hoặc .gltf đóng gói sẵn.', true); }
+    }
+    bump(); KB.reload(); render();
+  }
+
+  // ------------------------------------------------------------ prompt cho AI
+  function promptExtra() {
+    const m = mode(); if (!useMine(m)) return '';
+    const mc = all().filter(c => compat(c, m)); if (!mc.length) return '';
+    const R = { main: 'nhân vật chính', shadow: 'bóng đen cám dỗ', other: 'nhân vật phụ' };
+    const lines = mc.map(c => {
+      const r = R[roles[c.name] || (all().findIndex(x => x.name === c.name) === 0 ? 'main' : 'other')];
+      if (c.kind === 'code') return '- "' + c.name + '" (' + r + '): nhân vật vẽ bằng code, hỗ trợ mọi dáng và mọi nét mặt, có hold phone/book.';
+      if (c.kind === 'glb') { const g = glbs.get(c.name); return '- "' + c.name + '" (' + r + '): mô hình 3D có xương. Các "pose" dùng được: ' + ((g && g.anims.length) ? g.anims.join(', ') : 'chỉ đứng yên') + ' (pose khác sẽ dùng động tác nghỉ).'; }
+      const p = KB.Le.get(c.name); return '- "' + c.name + '" (' + r + '): nhân vật bằng ảnh, các dáng có sẵn: ' + Object.keys(p ? p.poses : {}).join(', ') + ' (dáng khác sẽ dùng idle).';
+    });
+    return '\n\nNHÂN VẬT RIÊNG CỦA TÔI (đã có sẵn trong app, KHÔNG cần viết code vẽ lại). Dùng "who" đúng các tên này cho nhân vật chính, bóng đen và nhân vật phụ thay cho hoodie, band, voice, friend... Mỗi nhân vật giữ ĐÚNG một tên xuyên suốt phim để hình luôn giống nhau. Không đưa khối "chars" vào JSON.\n' + lines.join('\n');
+  }
+
+  // ------------------------------------------------------------ giao dien: dung khung + gan su kien
+  function build() {
+    if (!$('#cpanel')) return false;
+    const on = (id, ev, fn) => { const e = $('#' + id); if (e) e['on' + ev] = fn; };
+    on('cmdef', 'change', () => { store.set('kaiMine_' + mode(), false); render(); });
+    on('cmmine', 'change', () => { store.set('kaiMine_' + mode(), true); render(); });
+    on('capply', 'click', apply); on('cundo', 'click', doUndo);
+    $('#cundo').disabled = true;
+    const gf = $('#glbf'); if (gf) gf.onchange = async e => { await addGlb([...e.target.files]); e.target.value = ''; };
+    const ff = $('#files'); if (ff) ff.addEventListener('change', e => { saveImgFiles([...e.target.files]); setTimeout(() => { bump(); render(); }, 400); });
+    $('#cadd') && $('#cadd').addEventListener('click', () => setTimeout(() => { bump(); render(); }, 200));
+    let tm = null; $('#code').addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (useMine()) renderMap(); }, 350); });
+    new MutationObserver(() => { sel.clear(); touched.clear(); render(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return true;
+  }
+
+  async function restore() {
+    try {
+      const imgs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
+      for (const rm of [true, false]) {
+        const grp = imgs.filter(r => !!r.rm === rm).map(r => new File([r.blob], r.name, { type: r.blob.type }));
+        if (!grp.length) continue;
+        const cb = $('#rmbg'), old = cb ? cb.checked : true; if (cb) cb.checked = rm;
+        try { await KB.In(grp); } finally { if (cb) cb.checked = old; }
+      }
+      for (const r of (await dbDo('glbs', 'readonly', s => s.getAll())) || []) glbs.set(r.id, { buffer: r.buffer, anims: r.anims || [], rev: 1 });
+      bump(); KB.reload(); KB.Ut(); render();
+    } catch (e) { /* khong luu duoc thi bo qua */ }
+  }
+
+  window.KaiUI = { render, promptExtra };
+  if (build()) { render(); restore(); }
+})();

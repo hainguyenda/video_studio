@@ -625,7 +625,14 @@ const GLB = new Map();
 const loader = new GLTFLoader();
 const ROBOT_URL = new URL('./lib/models/robot.glb', import.meta.url).href;
 const MODEL_ALIAS = { robot: ROBOT_URL };
-function modelUrl(spec) { return spec.model || MODEL_ALIAS[spec.who]; }
+const KC = () => window.KaiChars || null;
+const wlow = v => String(v || '').toLowerCase();
+function modelUrl(spec) {
+  if (spec.model) return spec.model;
+  if (MODEL_ALIAS[spec.who]) return MODEL_ALIAS[spec.who];
+  const kc = KC(); return kc && kc.glbs && kc.glbs().has(wlow(spec.who)) ? 'user:' + wlow(spec.who) : null;
+}
+const userSprite = spec => { const kc = KC(); return kc && kc.imgs ? kc.imgs().get(wlow(spec.who)) || null : null; };
 function loadGLB(url) {
   if (!GLB.has(url)) GLB.set(url, new Promise((res, rej) => {
     const fail = () => rej(new Error('khong tai duoc mo hinh 3D: ' + url));
@@ -654,7 +661,12 @@ function buildRigged(spec, gltf) {
 }
 function rigClip(c, name) {
   if (!name) return null; const n = String(name).toLowerCase();
-  return c.actions[n] || c.actions[(ROBOT_MAP[n] || '').toLowerCase()] || null;
+  if (c.actions[n]) return c.actions[n];
+  if (c.actions[(ROBOT_MAP[n] || '').toLowerCase()]) return c.actions[(ROBOT_MAP[n] || '').toLowerCase()];
+  const keys = Object.keys(c.actions), hit = keys.find(k => k.includes(n) || n.includes(k));
+  if (hit) return c.actions[hit];
+  const idle = keys.find(k => /idle|stand|breath|rest/.test(k));
+  return c.actions[idle || keys[0]] || null;
 }
 function applyRig(c, segs, t, F) {
   for (const k in c.actions) c.actions[k].setEffectiveWeight(0);
@@ -673,6 +685,39 @@ function applyRig(c, segs, t, F) {
     const map = { sad: 'Sad', cry: 'Sad', tired: 'Sad', angry: 'Angry', determined: 'Angry', shock: 'Surprised', happy: 'Surprised' };
     const m = map[F.name]; if (m && dict[m] != null) inf[dict[m]] = 1;
   }
+}
+
+// ---------------------------------------------------------------- nhan vat tu anh (sprite)
+const TEX = new WeakMap();
+function texOf(cv) {
+  let t = TEX.get(cv);
+  if (!t) { t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; TEX.set(cv, t); }
+  return t;
+}
+function buildSprite(spec, entry) {
+  const root = new THREE.Group(), holder = new THREE.Group(); root.add(holder);
+  const mat = new THREE.MeshStandardMaterial({ transparent: true, alphaTest: .3, roughness: 1, metalness: 0, side: THREE.DoubleSide, emissive: '#ffffff', emissiveIntensity: .55 });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); m.castShadow = true; m.receiveShadow = false;
+  m.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaTest: .3 });
+  holder.add(m);
+  return { kind: 'sprite', root, holder, mesh: m, mat, entry, mats: [mat], scale: 1, spec, H: 1.7 * num(spec.scale, 1), seed: 0 };
+}
+function applySprite(c, o) {
+  const poses = c.entry.poses || {}, keys = Object.keys(poses);
+  const cv = poses[o.pname] || poses[o.face] || poses.idle || poses.stand || poses[keys[0]];
+  if (!cv) return;
+  const tex = texOf(cv);
+  if (c.mat.map !== tex) { c.mat.map = tex; c.mat.emissiveMap = tex; c.mesh.customDepthMaterial.map = tex; c.mat.needsUpdate = true; c.mesh.customDepthMaterial.needsUpdate = true; }
+  const who = wlow(c.spec.who), H = c.H * (who === 'voice' ? 1.1 : 1) * (c.entry.scale ?? 1), W = H * cv.width / cv.height;
+  const flip = (o.facing < 0) !== !!c.entry.flip ? -1 : 1, t = o.t;
+  const amp = o.moving ? (o.run ? .07 : .035) : 0, bob = o.moving ? Math.abs(Math.sin(o.phase)) * amp : 0;
+  const breathe = 1 + .012 * Math.sin(t * 2.2 + c.seed);
+  c.mesh.scale.set(W * flip, H * breathe, 1);
+  let y = H * breathe / 2 + bob + (c.entry.dy || 0) * H, rz = o.moving ? Math.sin(o.phase) * .035 : 0;
+  if (o.sit) y -= H * .1;
+  if (o.cheer) y += Math.max(0, Math.sin(t * 7)) * .05;
+  if (o.lie) { rz = -Math.PI / 2 * .95; y = W * .1; }
+  c.mesh.position.set(0, y, 0); c.mesh.rotation.z = rz; c.H = H;
 }
 
 // ---------------------------------------------------------------- hat (bui, mua...)
@@ -732,9 +777,10 @@ function buildShot(args, env) {
   const list = (args.actors || []).slice();
   if (args.bed) list.unshift({ ...args.bed, x: 'bed.lie', pose: 'lie', face: args.bed.face || 'sleep', who: args.bed.who || 'hoodie', _bed: true });
   list.forEach((sp, idx) => {
-    const isRig = !!modelUrl(sp);
+    const isRig = !!modelUrl(sp), ent = !isRig ? userSprite(sp) : null;
     let c;
     if (isRig) { const g = env.glb.get(modelUrl(sp)); if (!g) return; c = buildRigged(sp, g); }
+    else if (ent) c = buildSprite(sp, ent);
     else c = buildBean(sp, accent);
     const anc = pickAnchor(set, sp.x);
     const x0 = anc ? anc.x : stageX(num(sp.x, .5)), z0 = anc ? anc.z : (set.stageZ ?? 0) - num(sp.z, 0) * 3;
@@ -828,6 +874,9 @@ function drawShot(B, t, dur, env) {
       if (prv) P = mixPose(resolvePose(prv.name), P, ease((t - cur.at) / .4));
       if (P.sit && !(anc.seat)) { P = { ...P, sit: false, floor: true }; }
       applyBean(c, P, F, t, { moving, run: (A.walk && A.walk.run) || pname === 'run', phase, seed: A.seed, seat: anc.seat || .45, blinkable: !c.isVoice, hold: sp.hold, look: sp.look, opacity: op });
+    } else if (c.kind === 'sprite') {
+      c.root.rotation.y = 0;
+      applySprite(c, { pname, face: fn, t, moving, phase, run: (A.walk && A.walk.run) || pname === 'run', facing: moving && dir ? dir : (sp.facing || 1), sit: !!(POSES[pname] && POSES[pname].sit), lie: !!anc.lie, cheer: pname === 'cheer' || pname === 'win' });
     } else {
       let segs = A.segs;
       if (A.walk) {
@@ -842,6 +891,7 @@ function drawShot(B, t, dur, env) {
     c.root.updateMatrixWorld(true);
     const head = new THREE.Vector3();
     if (c.kind === 'bean') c.head.getWorldPosition(head);
+    else if (c.kind === 'sprite') head.set(x, y + c.H * .88, z);
     else if (c.headBone) { c.headBone.getWorldPosition(head); head.y += .25; }
     else head.set(x, y + 1.5 * num(sp.scale, 1), z);
     const info = { pos: new THREE.Vector3(x, y, z), head, chest: new THREE.Vector3(x, (head.y + y) / 2 + .2, z) };
@@ -874,6 +924,7 @@ function drawShot(B, t, dur, env) {
   for (const sh of cam.shake || []) { const lt = t - num(sh.at, 0), d2 = num(sh.dur, .4); if (lt >= 0 && lt < d2) { const k = (1 - lt / d2) * num(sh.amt, 1) * .06; camera.position.x += Math.sin(lt * 71) * k; camera.position.y += Math.cos(lt * 53) * k; } }
   camera.fov = num(cam.fov, vertical ? 46 : 30); camera.aspect = env.W / env.H; camera.updateProjectionMatrix();
   camera.lookAt(target);
+  for (const A of actors) if (A.c.kind === 'sprite') A.c.holder.rotation.y = Math.atan2(camera.position.x - A.c.root.position.x, camera.position.z - A.c.root.position.z);
   B.fill.position.copy(camera.position).add(new THREE.Vector3(.8, 1.6, 0)); B.fill.target.position.copy(target);
   if (cam.roll) camera.rotateZ(cam.roll * D2R);
 }
@@ -891,7 +942,7 @@ function disposeShot(B) {
 // ---------------------------------------------------------------- API cho app
 const cache = new Map();
 const envGlb = new Map();
-function keyOf(args, env) { return JSON.stringify(args) + '|' + env.accent + '|' + (env.H > env.W ? 'v' : env.W === env.H ? 's' : 'h'); }
+function keyOf(args, env) { return JSON.stringify(args) + '|' + env.accent + '|' + (env.H > env.W ? 'v' : env.W === env.H ? 's' : 'h') + '|' + ((window.KaiChars && window.KaiChars.rev) || 0); }
 function getShot(args, env) {
   const k = keyOf(args, env);
   let B = cache.get(k);
@@ -911,7 +962,18 @@ window.Kai3D = {
       if (s.tpl !== 'scene3d') continue; const a = s.args || {};
       for (const sp of [...(a.actors || []), a.bed].filter(Boolean)) { const u = modelUrl(sp); if (u) urls.add(u); }
     }
-    for (const u of urls) envGlb.set(u, await loadGLB(u));
+    for (const u of urls) {
+      if (u.startsWith('user:')) {
+        const ent = KC().glbs().get(u.slice(5)), key = u + '#' + ent.buffer.byteLength + '#' + (ent.rev || 0);
+        if (!GLB.has(key)) GLB.set(key, loader.parseAsync(ent.buffer.slice(0), ''));
+        envGlb.set(u, await GLB.get(key));
+      } else envGlb.set(u, await loadGLB(u));
+    }
+  },
+  async inspectGLB(buffer) {
+    const g = await loader.parseAsync(buffer.slice(0), '');
+    let skinned = false; g.scene.traverse(o => { if (o.isSkinnedMesh) skinned = true; });
+    return { anims: g.animations.map(a => a.name), skinned };
   },
   draw(ctx, t, shot, args, env) {
     const cw = ctx.canvas.width, ch = ctx.canvas.height;
