@@ -105,7 +105,9 @@
       role.onchange = () => { roles[c.name] = role.value; store.set('kaiRoles', roles); sel.clear(); touched.clear(); renderMap(); };
       const rl = document.createElement('label'); rl.style.cssText = 'display:grid;gap:2px;font-size:11px;color:var(--mut)'; rl.append('Vai trong phim', role);
       box.append(thumb(c), info, rl);
-      if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) note(String(r), true); else note(''); }; box.append(b); }
+      if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) { note(String(r), true); return; } note(''); const pb = $('#cprevbox'); pb.hidden = false; pb.style.display = 'grid'; $('#cprevname').textContent = c.name; $('#cprev').hidden = false; pb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          clearInterval(window.__cprevTimer); const t0 = performance.now();
+          window.__cprevTimer = setInterval(() => { if (pb.hidden || !KB.Le.has(c.name) && !KB.Ae()[c.name]) { clearInterval(window.__cprevTimer); return; } window.__cprevT = (performance.now() - t0) / 1000; KB.En(c.name); }, 50); }; box.append(b); }
       const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => remove(c); box.append(d);
       list.append(box);
     }
