@@ -82,6 +82,7 @@
   }
 
   function render() {
+    aliasAll();
     const panel = $('#cpanel'); if (!panel) return;
     const m = mode(), mine = useMine(m), chars = all();
     $('#cmdef').checked = !mine; $('#cmmine').checked = mine;
@@ -243,6 +244,45 @@
     return files.length;
   }
 
+  // ------------------------------------------------------------ bang nhieu dang cua 1 nhan vat
+  const SHEET = ['idle', 'happy', 'sad', 'cry', 'punch', 'run', 'sit', 'cheer'];
+  const SHEET_VN = { idle: 'đứng', happy: 'vui', sad: 'buồn', cry: 'khóc', punch: 'đấm', run: 'chạy', sit: 'ngồi', cheer: 'giơ tay ăn mừng' };
+  const ALIAS = { idle: ['stand', 'relaxed', 'neutral'], happy: ['smile', 'grin'], sad: ['tired', 'slump', 'lonely', 'headhold', 'facepalm', 'knees', 'kneel'], cry: [], punch: ['guard', 'fist'], run: ['walk'], sit: ['sitphone', 'sitdesk', 'sitsad', 'crouch'], cheer: ['win', 'wave', 'lift'] };
+  function aliasAll() {
+    for (const [, ent] of KB.Le) { const p = ent.poses; for (const k of Object.keys(ALIAS)) if (p[k] && !p[k].__alias) for (const a of ALIAS[k]) if (!p[a]) { p[a] = p[k]; } }
+  }
+  function rowsOf(cv) {
+    const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data, row = new Uint32Array(h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 40) row[y]++;
+    const min = Math.max(2, w * .004), gap = Math.max(6, h * .025), out = [];
+    let st = -1, last = -1;
+    for (let y = 0; y < h; y++) if (row[y] > min) { if (st < 0) st = y; else if (y - last > gap) { out.push([st, last]); st = y; } last = y; }
+    if (st >= 0) out.push([st, last]);
+    return out.filter(r => r[1] - r[0] > h * .08);
+  }
+  async function splitSheet(name) {
+    const ent = KB.Le.get(name); if (!ent) return 0;
+    const cv = Object.values(ent.poses)[0], pieces = [];
+    for (const [y0, y1] of rowsOf(cv)) {
+      const band = document.createElement('canvas'); band.width = cv.width; band.height = y1 - y0 + 1;
+      band.getContext('2d').drawImage(cv, 0, y0, cv.width, band.height, 0, 0, cv.width, band.height);
+      for (const sg of segments(band)) { const pc = cropCols(band, sg[0], sg[1]); if (pc) pieces.push(pc); }
+    }
+    if (pieces.length < 2) return 0;
+    const files = [];
+    for (let i = 0; i < Math.min(pieces.length, SHEET.length); i++) {
+      const blob = await new Promise(r => pieces[i].toBlob(r, 'image/png'));
+      files.push(new File([blob], name + '__' + SHEET[i] + '.png', { type: 'image/png' }));
+    }
+    KB.Le.delete(name);
+    const recs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
+    for (const r of recs) if (r.slug === name) await dbDo('imgs', 'readwrite', s => s.delete(r.name));
+    const cb = $('#rmbg'), old = cb ? cb.checked : false; if (cb) cb.checked = false;
+    try { await KB.In(files); } finally { if (cb) cb.checked = old; }
+    files.forEach(f => dbDo('imgs', 'readwrite', s => s.put({ name: f.name, slug: name, blob: f, rm: false, v: 2 })));
+    return files.length;
+  }
+
   // ------------------------------------------------------------ prompt cho AI
   function promptExtra() {
     const m = mode(); if (!useMine(m)) return '';
@@ -273,7 +313,10 @@
       await KB.In(files); saveImgFiles(files);
       const added = [...new Set(files.map(f => slug(f.name.replace(/\.[^.]+$/, '').split('__')[0])))].filter(n => KB.Le.has(n));
       const msgs = [];
-      for (const n of added) { const k = await splitChar(n, before.has(n)); if (k > 1) msgs.push('Ảnh "' + n + '" có ' + k + ' hình nên mình đã tách thành ' + k + ' nhân vật: ' + Array.from({ length: k }, (_, i) => n + '-' + (i + 1)).join(', ') + '. Hình nào không dùng thì bấm Xóa.'); }
+      const sheet = !!($('#csheet') && $('#csheet').checked);
+      for (const n of added) {
+        if (sheet) { const k = await splitSheet(n); msgs.push(k ? 'Đã tách bảng của "' + n + '" thành ' + k + ' dáng: ' + SHEET.slice(0, k).map(x => SHEET_VN[x]).join(', ') + '. Bấm Xem thử để kiểm tra.' : 'Không tách được bảng dáng của "' + n + '". Hãy để các dáng cách xa nhau trên nền trơn.'); continue; }
+        const k = await splitChar(n, before.has(n)); if (k > 1) msgs.push('Ảnh "' + n + '" có ' + k + ' hình nên mình đã tách thành ' + k + ' nhân vật: ' + Array.from({ length: k }, (_, i) => n + '-' + (i + 1)).join(', ') + '. Nếu đây là nhiều dáng của cùng 1 nhân vật, hãy Xóa rồi thêm lại và tick ô "Ảnh là bảng nhiều dáng".'); }
       bump(); KB.reload(); KB.Ut(); sel.clear(); touched.clear(); render();
       note(msgs.join(' ') || ('Đã thêm ' + added.join(', ') + '.'));
     };

@@ -704,10 +704,10 @@ function buildSprite(spec, entry) {
 }
 function applySprite(c, o) {
   const poses = c.entry.poses || {}, keys = Object.keys(poses);
-  const cv = poses[o.pname] || poses[o.face] || poses.idle || poses.stand || poses[keys[0]];
+  const cv = (o.moving && (o.run ? poses.run || poses.walk : poses.walk || poses.run)) || (!/^(stand|idle|relaxed)$/.test(o.pname || 'stand') && poses[o.pname]) || poses[o.face] || poses[o.pname] || poses.idle || poses.stand || poses[keys[0]];
   if (!cv) return;
   const P = window.KaiPuppet, R = P && c.entry.puppet !== false && !o.lie ? P.rig(cv) : null;
-  const exact = (o.pname && cv === poses[o.pname] && !/^(stand|idle)$/.test(o.pname)) || (o.face && cv === poses[o.face] && cv !== poses.idle);
+  const exact = cv !== (poses.idle || poses.stand || poses[keys[0]]);
   let tex, figH = cv.height, padB = 0, aspect = cv.width / cv.height, puppet = false;
   if (R && R.ok) {
     puppet = true;
