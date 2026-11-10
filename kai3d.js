@@ -399,6 +399,9 @@ const OUTFITS = {
   kid: { top: '#e0a050', pants: '#3a5a7a', scale: .66 },
   ghost: { top: '#c9d4ff', pants: '#c9d4ff', ghost: true },
   voice: { voice: true, scale: 1.14 },
+  toon: { toon: true, top: '#5e5f66', top2: '#4b4c53', pants: '#1c1c21', shoe: '#3b3c43', skin: '#f5d7a8' },
+  toonhood: { toon: true, hoodUp: true, top: '#5e5f66', top2: '#4b4c53', pants: '#1c1c21', shoe: '#3b3c43', skin: '#f5d7a8' },
+  toonband: { toon: true, band: true, top: '#5e5f66', top2: '#4b4c53', pants: '#1c1c21', shoe: '#3b3c43', skin: '#f5d7a8' },
 };
 
 const POSES = {
@@ -435,11 +438,11 @@ const POSES = {
 };
 const FACES = {
   neutral: { lid: .12, brow: 0, by: 0, mouth: 'small' }, smile: { lid: .18, brow: -4, by: .01, mouth: 'smile' },
-  happy: { lid: .2, brow: -6, by: .015, mouth: 'smile' }, sad: { lid: .38, brow: -20, by: 0, mouth: 'sad' },
+  happy: { lid: .2, brow: -6, by: .015, mouth: 'smile', open: true }, sad: { lid: .38, brow: -20, by: 0, mouth: 'sad' },
   tired: { lid: .52, brow: -8, by: -.01, mouth: 'flat' }, determined: { lid: .3, brow: 22, by: -.012, mouth: 'flat' },
   angry: { lid: .3, brow: 32, by: -.015, mouth: 'sad' }, sleep: { lid: 1, brow: 0, by: -.005, mouth: 'small' },
-  cry: { lid: .45, brow: -24, by: 0, mouth: 'sad', tears: true }, shock: { lid: 0, brow: -10, by: .03, mouth: 'o' },
-  grin: { lid: .2, brow: 26, by: -.01, mouth: 'grin' }, bloodshot: { lid: .5, brow: -8, by: -.01, mouth: 'flat', red: true },
+  cry: { lid: .45, brow: -24, by: 0, mouth: 'sad', tears: true, open: true }, shock: { lid: 0, brow: -10, by: .03, mouth: 'o' },
+  grin: { lid: .2, brow: 26, by: -.01, mouth: 'grin', open: true }, bloodshot: { lid: .5, brow: -8, by: -.01, mouth: 'flat', red: true },
 };
 const BASE_POSE = { lean: 0, twist: 0, headX: 0, headY: 0, headZ: 0, la: [0, 6, 8], ra: [0, 6, 8], ll: [0, 0], rl: [0, 0], drop: 0 };
 const HIP_Y = .72, BODY_SCALE = .92;
@@ -617,7 +620,133 @@ function applyBean(c, P, F, t, extra) {
   c.tears.forEach((tr, i) => { tr.visible = !!F.tears; tr.position.y = -.04 - ((t * .5 + i * .37) % 1) * .2; });
   c.props.phone.visible = P.hold === 'phone' || extra.hold === 'phone';
   c.props.dumbbell.visible = P.hold === 'dumbbell' || extra.hold === 'dumbbell';
+  if (c.toon) {
+    const open = !!F.open;
+    c.smileOpen.visible = open && F.mouth !== 'sad'; c.sadOpen.visible = open && F.mouth === 'sad';
+    if (open) c.arc.visible = false;
+    for (const e of c.eyes) e.brow.visible = Math.abs(F.brow) > 3;
+    c.tears.forEach((tr, i) => { tr.scale.y = 1 + ((t * 1.3 + i * .5) % 1) * .8; tr.position.y = -.1 - tr.scale.y * .03; });
+  }
   if (c.aura) { c.aura.material.opacity = (.42 + .14 * Math.sin(t * 2.4)) * extra.opacity; c.auraLight.intensity = (4 + 1.5 * Math.sin(t * 2.4)) * extra.opacity; }
+}
+
+
+// ---------------------------------------------------------------- nhan vat hoat hinh "toon" (net vien den, to mau phang)
+let GRAD = null;
+function gradTex() {
+  if (!GRAD) {
+    GRAD = new THREE.DataTexture(new Uint8Array([95, 95, 95, 255, 165, 165, 165, 255, 225, 225, 225, 255]), 3, 1, THREE.RGBAFormat);
+    GRAD.minFilter = GRAD.magFilter = THREE.NearestFilter; GRAD.generateMipmaps = false; GRAD.needsUpdate = true;
+  }
+  return GRAD;
+}
+const OUTL = new Map();
+function outlineMat(th) {
+  let m = OUTL.get(th); if (m) return m;
+  m = new THREE.MeshBasicMaterial({ color: '#17141a', side: THREE.BackSide });
+  m.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize(normal) * ' + th.toFixed(4) + ';'); };
+  m.customProgramCacheKey = () => 'kai-outline-' + th;
+  OUTL.set(th, m); return m;
+}
+function ol(m, th = .012) {
+  const o = new THREE.Mesh(m.geometry, outlineMat(th)); o.castShadow = false; o.receiveShadow = false; o.userData.shared = true; o.renderOrder = -1; m.add(o); return m;
+}
+function buildToon(spec, accent) {
+  const who = spec.who || 'toon', O = OUTFITS[who] || OUTFITS.toon;
+  const mats = [];
+  const T = c => { const m = new THREE.MeshToonMaterial({ color: c, gradientMap: gradTex() }); mats.push(m); return m; };
+  const Bm = c => { const m = new THREE.MeshBasicMaterial({ color: c }); mats.push(m); return m; };
+  const mHood = T(spec.color || O.top), mHood2 = T(O.top2), mSkin = T(spec.skin || O.skin), mPants = T(O.pants), mShoe = T(O.shoe);
+  const mWhite = Bm(spec.bloodshot ? '#f6d9d2' : '#f6f4ee'), mBag = T('#7a5462'), mDark = Bm('#17141a'), mMouth = Bm('#5a1d25'), mTongue = Bm('#e0727a'), mString = T('#c9c9cf');
+
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const hips = new THREE.Group(); hips.position.y = HIP_Y; body.add(hips);
+  const pelvis = ol(sph(.235, mPants, 0, 0, 0)); pelvis.scale.set(1.12, .72, .88); hips.add(pelvis);
+  const torso = new THREE.Group(); hips.add(torso);
+  const chest = ol(cap(.27, .25, mHood, 0, .29, 0), .014); chest.scale.set(1.08, 1, .84); torso.add(chest);
+  const hem = ol(mesh(new THREE.TorusGeometry(.262, .052, 10, 28), mHood2, 0, .045, 0)); hem.rotation.x = Math.PI / 2; hem.scale.set(1.08, .86, 1); torso.add(hem);
+  const pocket = ol(mesh(new THREE.CapsuleGeometry(.065, .17, 4, 12), mHood2, 0, .15, .2), .007); pocket.rotation.z = Math.PI / 2; pocket.scale.z = .4; torso.add(pocket);
+  if (!O.hoodUp) {
+    const hood = ol(mesh(new THREE.TorusGeometry(.17, .085, 12, 28), mHood, 0, .53, -.05)); hood.rotation.x = Math.PI / 2 - .4; torso.add(hood);
+    const back = ol(sph(.2, mHood, 0, .55, -.19)); back.scale.set(1.05, .85, .6); torso.add(back);
+    for (const s of [-1, 1]) {
+      const st = cyl(.011, .011, .2, mString, s * .065, .42, .222, 6); st.rotation.x = .14; torso.add(st);
+      torso.add(cap(.016, .02, mDark, s * .065, .31, .236));
+    }
+  }
+  const neck = new THREE.Group(); neck.position.y = .56; torso.add(neck);
+  const head = new THREE.Group(); head.position.y = .34; neck.add(head);
+  const skull = ol(sph(.37, mSkin, 0, 0, 0, 40), .013); skull.scale.set(1, .97, .95); head.add(skull);
+  if (O.hoodUp) { const hd = ol(mesh(new THREE.SphereGeometry(.4, 30, 18, Math.PI / 2 + 1.05, Math.PI * 2 - 2.1, 0, Math.PI * .8), T(O.top), 0, .02, -.03)); hd.material.side = THREE.DoubleSide; head.add(hd); }
+  if (O.band) { const b = ol(mesh(new THREE.TorusGeometry(.358, .035, 8, 36), T(accent), 0, .12, 0), .008); b.rotation.x = Math.PI / 2 - .1; head.add(b); }
+
+  const eyes = [];
+  for (const s of [1, -1]) {
+    const eg = new THREE.Group(); eg.position.set(s * .138, .03, .29); head.add(eg);
+    const bag = sph(.124, mBag, 0, -.03, -.035, 22); bag.scale.set(1.02, .95, .4); eg.add(bag);
+    const sc = ol(sph(.108, mWhite, 0, 0, 0, 28), .007); sc.scale.z = .5; eg.add(sc);
+    const pu = sph(.036, mDark, 0, -.004, .05, 16); pu.scale.z = .35; eg.add(pu);
+    const hl = sph(.011, Bm('#ffffff'), .014, .012, .06, 8); eg.add(hl);
+    const lid = mesh(new THREE.SphereGeometry(.115, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), mSkin); lid.scale.z = .56; eg.add(lid);
+    const brow = mesh(new THREE.CapsuleGeometry(.01, .075, 4, 8), mDark, 0, .13, .035, false); brow.rotation.z = Math.PI / 2;
+    const bw = new THREE.Group(); bw.add(brow); eg.add(bw); bw.position.y = 0;
+    eyes.push({ g: eg, lid, brow: bw, s });
+  }
+  // dung lai co che xoay long may cua applyBean (brow.rotation.z, brow.position.y)
+  eyes.forEach(e => { e.brow.position.y = .095; e.brow.children[0].position.y = .06; });
+  const mouthG = new THREE.Group(); mouthG.position.set(0, -.18, .305); mouthG.rotation.x = -.35; head.add(mouthG);
+  const arc = mesh(new THREE.TorusGeometry(.048, .009, 6, 18, Math.PI), mDark, 0, 0, 0, false); mouthG.add(arc);
+  const line = mesh(new THREE.CapsuleGeometry(.008, .07, 4, 8), mDark, 0, 0, 0, false); line.rotation.z = Math.PI / 2; mouthG.add(line);
+  const oh = sph(.03, mMouth, 0, 0, 0, 12); oh.scale.set(1, 1.25, .4); mouthG.add(oh);
+  const smileOpen = new THREE.Group(); mouthG.add(smileOpen);
+  { const a = new THREE.Mesh(new THREE.CircleGeometry(.072, 28, Math.PI, Math.PI), mMouth); const tg = new THREE.Mesh(new THREE.CircleGeometry(.04, 20, Math.PI, Math.PI), mTongue); tg.position.set(0, -.032, .002); tg.scale.y = .8;
+    const rim = mesh(new THREE.TorusGeometry(.072, .007, 6, 24, Math.PI), mDark, 0, 0, .002, false); rim.rotation.z = Math.PI; const top = mesh(new THREE.CapsuleGeometry(.007, .144, 4, 8), mDark, 0, 0, .002, false); top.rotation.z = Math.PI / 2;
+    smileOpen.add(a, tg, rim, top); smileOpen.position.y = .012; }
+  const sadOpen = new THREE.Group(); mouthG.add(sadOpen);
+  { const a = new THREE.Mesh(new THREE.CircleGeometry(.06, 28, 0, Math.PI), mMouth); a.scale.y = 1.25; const tg = new THREE.Mesh(new THREE.CircleGeometry(.03, 16, 0, Math.PI), mTongue); tg.position.set(0, 0, .002);
+    const rim = mesh(new THREE.TorusGeometry(.06, .007, 6, 24, Math.PI), mDark, 0, 0, .002, false); rim.scale.y = 1.25; const bot = mesh(new THREE.CapsuleGeometry(.007, .12, 4, 8), mDark, 0, 0, .002, false); bot.rotation.z = Math.PI / 2;
+    sadOpen.add(a, tg, rim, bot); sadOpen.position.y = -.03; }
+  smileOpen.visible = sadOpen.visible = false;
+  const tearM = new THREE.MeshBasicMaterial({ color: '#6cc4ff', transparent: true, opacity: .92 }); mats.push(tearM);
+  const tears = [1, -1].map(s => { const tr = mesh(new THREE.CapsuleGeometry(.016, .06, 4, 8), tearM, s * .13, -.12, .31, false); tr.visible = false; head.add(tr); return tr; });
+
+  const limb = (side, isArm) => {
+    const g = new THREE.Group();
+    if (isArm) {
+      g.position.set(side * .31, .47, 0); torso.add(g);
+      g.add(ol(cap(.088, .16, mHood, 0, -.15, 0)));
+      const el = new THREE.Group(); el.position.y = -.31; g.add(el);
+      el.add(ol(cap(.082, .12, mHood, 0, -.11, 0)));
+      const cuff = ol(mesh(new THREE.TorusGeometry(.07, .03, 8, 18), mHood2, 0, -.225, 0), .008); cuff.rotation.x = Math.PI / 2; el.add(cuff);
+      const hand = new THREE.Group(); hand.position.y = -.29; el.add(hand);
+      const palm = ol(sph(.075, mSkin, 0, 0, 0, 18), .009); palm.scale.set(.95, 1.08, .85); hand.add(palm);
+      hand.add(ol(sph(.03, mSkin, -side * .055, .02, .035, 10), .006));
+      return { g, el, hand };
+    }
+    g.position.set(side * .125, -.04, 0); hips.add(g);
+    g.add(ol(cap(.108, .17, mPants, 0, -.16, 0)));
+    const kn = new THREE.Group(); kn.position.y = -.31; g.add(kn);
+    kn.add(ol(cap(.1, .16, mPants, 0, -.15, 0)));
+    const ft = ol(sph(.125, mShoe, 0, -.3, .06, 18), .011); ft.scale.set(.95, .6, 1.55); kn.add(ft);
+    return { g, kn };
+  };
+  const LA = limb(1, true), RA = limb(-1, true), LL = limb(1, false), RL = limb(-1, false);
+
+  const props = {};
+  {
+    const pg = new THREE.Group(); pg.position.set(-.02, -.06, .06); pg.rotation.set(-1.0, 0, .15);
+    pg.add(ol(box(.085, .16, .014, T('#16161a'), 0, 0, 0), .005));
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(.072, .145), new THREE.MeshBasicMaterial({ color: spec.glowFace || '#9fb6ff', toneMapped: false })); scr.position.z = .008; mats.push(scr.material); pg.add(scr);
+    pg.add(pointLight(spec.glowFace || '#9fb6ff', .35, 1.2, 0, .04, .2));
+    RA.hand.add(pg); props.phone = pg; pg.visible = false;
+    const dbs = [LA, RA].map(A => { const d = new THREE.Group(); d.add(cyl(.018, .018, .26, T('#888'), 0, 0, 0, 8)); for (const s of [-.12, .12]) d.add(ol(cyl(.07, .07, .05, T('#222'), 0, s, 0, 14), .006)); d.rotation.z = Math.PI / 2; A.hand.add(d); d.visible = false; return d; });
+    props.dumbbell = { set visible(v) { dbs.forEach(d => d.visible = v); } };
+  }
+  root.traverse(o => { if (o.isMesh && !o.userData.shared) o.castShadow = true; });
+  head.traverse(o => { if (o.isMesh) { o.castShadow = o === skull; o.receiveShadow = false; } });
+  const scale = num(spec.scale, 1) * (O.scale || 1) * BODY_SCALE;
+  root.scale.setScalar(scale);
+  return { kind: 'bean', toon: true, root, body, hips, torso, neck, head, LA, RA, LL, RL, eyes, arc, line, oh, smileOpen, sadOpen, tears, props, mats, chest, aura: null, auraLight: null, isVoice: false, scale, spec };
 }
 
 // ---------------------------------------------------------------- nhan vat co xuong (GLB)
@@ -806,7 +935,7 @@ function buildShot(args, env) {
     let c;
     if (isRig) { const g = env.glb.get(modelUrl(sp)); if (!g) return; c = buildRigged(sp, g); }
     else if (ent) c = buildSprite(sp, ent);
-    else c = buildBean(sp, accent);
+    else c = (OUTFITS[sp.who] || {}).toon ? buildToon(sp, accent) : buildBean(sp, accent);
     const anc = pickAnchor(set, sp.x);
     const x0 = anc ? anc.x : stageX(num(sp.x, .5)), z0 = anc ? anc.z : (set.stageZ ?? 0) - num(sp.z, 0) * 3;
     const walk = sp.walk && typeof sp.walk === 'object' && sp.walk.to != null ? sp.walk : null;

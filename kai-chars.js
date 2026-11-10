@@ -46,7 +46,7 @@
   const compat = (c, m) => c.kind === 'img' || (c.kind === 'code' && m !== 'd3') || (c.kind === 'glb' && m === 'd3');
   const KIND = { img: 'ảnh', code: 'code', glb: 'mô hình 3D' };
   const DEFAULTS = ['hoodie', 'hooded', 'hero', 'band', 'voice', 'friend', 'friend2', 'friend3', 'girl', 'mom', 'dad', 'kid', 'ghost'];
-  const DEF_LABEL = { hoodie: 'hoodie (mặc định)', hooded: 'hooded (mặc định)', hero: 'hero (mặc định)', band: 'band (mặc định)', voice: 'bóng đen (mặc định)', friend: 'friend (mặc định)', friend2: 'friend2 (mặc định)', friend3: 'friend3 (mặc định)', girl: 'girl (mặc định)', mom: 'mom (mặc định)', dad: 'dad (mặc định)', kid: 'kid (mặc định)', ghost: 'ghost (mặc định)' };
+  const DEF_LABEL = { hoodie: 'hoodie (mặc định)', hooded: 'hooded (mặc định)', hero: 'hero (mặc định)', band: 'band (mặc định)', voice: 'bóng đen (mặc định)', friend: 'friend (mặc định)', friend2: 'friend2 (mặc định)', friend3: 'friend3 (mặc định)', girl: 'girl (mặc định)', mom: 'mom (mặc định)', dad: 'dad (mặc định)', kid: 'kid (mặc định)', ghost: 'ghost (mặc định)', toon: 'toon - hoạt hình nét viền (3D, đẹp nhất)', toonhood: 'toon trùm mũ (3D)', toonband: 'toon đeo băng đô (3D)', robot: 'robot (3D)' };
 
   // ------------------------------------------------------------ doc / sua code JSON
   function parseCode() {
@@ -142,7 +142,7 @@
       const s2 = document.createElement('select'); s2.style.minWidth = '0';
       const keep = document.createElement('option'); keep.value = ''; keep.textContent = mine.has(s) ? '— giữ nguyên (đã là nhân vật của bạn) —' : '— giữ nguyên —'; s2.append(keep);
       if (mc.length) { const g = document.createElement('optgroup'); g.label = 'Nhân vật của tôi'; mc.forEach(c => { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; g.append(o); }); s2.append(g); }
-      const g2 = document.createElement('optgroup'); g2.label = 'Mặc định'; DEFAULTS.concat(m === 'd3' ? ['robot'] : []).forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = DEF_LABEL[d] || d; g2.append(o); }); s2.append(g2);
+      const g2 = document.createElement('optgroup'); g2.label = 'Mặc định'; DEFAULTS.concat(m === 'd3' ? ['toon', 'toonhood', 'toonband', 'robot'] : []).forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = DEF_LABEL[d] || d; g2.append(o); }); s2.append(g2);
       s2.value = sel.get(s) || ''; if (s2.value !== (sel.get(s) || '')) s2.value = '';
       s2.onchange = () => { touched.add(s); sel.set(s, s2.value); };
       row.append(a, arrow, s2); box.append(row);
