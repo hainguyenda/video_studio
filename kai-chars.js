@@ -4,7 +4,7 @@
   const KB = window.__KB;
   if (!KB) return;
   const $ = s => document.querySelector(s);
-  const slug = n => String(n || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = n => String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* bo qua */ } },
@@ -172,7 +172,7 @@
   // ------------------------------------------------------------ them nhan vat
   function saveImgFiles(files) {
     const rm = !!($('#rmbg') && $('#rmbg').checked);
-    files.forEach(f => dbDo('imgs', 'readwrite', s => s.put({ name: f.name, slug: slug(f.name.replace(/\.[^.]+$/, '').split('__')[0]), blob: f, rm })));
+    files.forEach(f => dbDo('imgs', 'readwrite', s => s.put({ name: f.name, slug: slug(f.name.replace(/\.[^.]+$/, '').split('__')[0]), blob: f, rm, v: 2 })));
   }
   async function addGlb(files) {
     for (const f of files) {
@@ -189,6 +189,52 @@
       } catch (e) { note('Không đọc được mô hình "' + f.name + '". Hãy dùng file .glb hoặc .gltf đóng gói sẵn.', true); }
     }
     bump(); KB.reload(); render();
+  }
+
+  // ------------------------------------------------------------ tach anh co nhieu hinh
+  function segments(cv) {
+    const w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+    const col = new Uint32Array(w);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 40) col[x]++;
+    const minPx = Math.max(2, h * 0.01), gap = Math.max(6, w * 0.03), segs = [];
+    let st = -1, last = -1;
+    for (let x = 0; x < w; x++) {
+      if (col[x] > minPx) { if (st < 0) st = x; else if (x - last > gap) { segs.push([st, last]); st = x; } last = x; }
+    }
+    if (st >= 0) segs.push([st, last]);
+    const mass = s => { let m = 0; for (let x = s[0]; x <= s[1]; x++) m += col[x]; return m; };
+    const total = segs.reduce((a, s) => a + mass(s), 0);
+    return segs.filter(s => s[1] - s[0] > w * 0.06 && mass(s) > total * 0.08);
+  }
+  function cropCols(cv, a, b) {
+    const w = b - a + 1, h = cv.height, g = cv.getContext('2d').getImageData(a, 0, w, h).data;
+    let top = h, bot = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[(y * w + x) * 4 + 3] > 8) { if (y < top) top = y; bot = y; break; }
+    if (bot < 0) return null;
+    const o = document.createElement('canvas'); o.width = w; o.height = bot - top + 1;
+    o.getContext('2d').drawImage(cv, a, top, w, o.height, 0, 0, w, o.height);
+    return o;
+  }
+  // Mot anh co nhieu hinh dung canh nhau -> moi hinh thanh mot nhan vat rieng (ten-1, ten-2...)
+  async function splitChar(name, existed) {
+    const ent = KB.Le.get(name); if (!ent || existed) return 1;
+    const poses = Object.entries(ent.poses); if (poses.length !== 1) return 1;
+    const [pose, cv] = poses[0], segs = segments(cv);
+    if (segs.length < 2 || segs.length > 8) return 1;
+    const files = [];
+    for (let i = 0; i < segs.length; i++) {
+      const piece = cropCols(cv, segs[i][0], segs[i][1]); if (!piece) continue;
+      const blob = await new Promise(r => piece.toBlob(r, 'image/png'));
+      files.push(new File([blob], name + '-' + (i + 1) + '__' + pose + '.png', { type: 'image/png' }));
+    }
+    if (files.length < 2) return 1;
+    const cb = $('#rmbg'), old = cb ? cb.checked : false; if (cb) cb.checked = false;
+    try { await KB.In(files); } finally { if (cb) cb.checked = old; }
+    KB.Le.delete(name);
+    const recs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
+    for (const r of recs) if (r.slug === name) await dbDo('imgs', 'readwrite', s => s.delete(r.name));
+    files.forEach(f => dbDo('imgs', 'readwrite', s => s.put({ name: f.name, slug: slug(f.name.split('__')[0]), blob: f, rm: false, v: 2 })));
+    return files.length;
   }
 
   // ------------------------------------------------------------ prompt cho AI
@@ -214,7 +260,17 @@
     on('capply', 'click', apply); on('cundo', 'click', doUndo);
     $('#cundo').disabled = true;
     const gf = $('#glbf'); if (gf) gf.onchange = async e => { await addGlb([...e.target.files]); e.target.value = ''; };
-    const ff = $('#files'); if (ff) ff.addEventListener('change', e => { saveImgFiles([...e.target.files]); setTimeout(() => { bump(); render(); }, 400); });
+    const ff = $('#files'); if (ff) ff.onchange = async e => {
+      const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+      note('Đang xử lý ảnh...');
+      const before = new Set(KB.Le.keys());
+      await KB.In(files); saveImgFiles(files);
+      const added = [...new Set(files.map(f => slug(f.name.replace(/\.[^.]+$/, '').split('__')[0])))].filter(n => KB.Le.has(n));
+      const msgs = [];
+      for (const n of added) { const k = await splitChar(n, before.has(n)); if (k > 1) msgs.push('Ảnh "' + n + '" có ' + k + ' hình nên mình đã tách thành ' + k + ' nhân vật: ' + Array.from({ length: k }, (_, i) => n + '-' + (i + 1)).join(', ') + '. Hình nào không dùng thì bấm Xóa.'); }
+      bump(); KB.reload(); KB.Ut(); sel.clear(); touched.clear(); render();
+      note(msgs.join(' ') || ('Đã thêm ' + added.join(', ') + '.'));
+    };
     $('#cadd') && $('#cadd').addEventListener('click', () => setTimeout(() => { bump(); render(); }, 200));
     let tm = null; $('#code').addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(() => { if (useMine()) renderMap(); }, 350); });
     new MutationObserver(() => { sel.clear(); touched.clear(); render(); }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -225,11 +281,20 @@
     try {
       const imgs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
       for (const rm of [true, false]) {
-        const grp = imgs.filter(r => !!r.rm === rm).map(r => new File([r.blob], r.name, { type: r.blob.type }));
+        const grp = imgs.filter(r => (r.v ? !!r.rm : true) === rm).map(r => new File([r.blob], r.name, { type: r.blob.type }));
         if (!grp.length) continue;
         const cb = $('#rmbg'), old = cb ? cb.checked : true; if (cb) cb.checked = rm;
         try { await KB.In(grp); } finally { if (cb) cb.checked = old; }
       }
+      // anh luu tu ban cu: dat lai ten cho dung tieng Viet, xoa nen va tach neu co nhieu hinh
+      const legacy = imgs.filter(r => !r.v);
+      const fresh = new Set();
+      for (const r of legacy) {
+        const n = slug(r.name.replace(/\.[^.]+$/, '').split('__')[0]); fresh.add(n);
+        await dbDo('imgs', 'readwrite', s => s.put({ name: r.name, slug: n, blob: r.blob, rm: true, v: 2 }));
+        if (r.slug && r.slug !== n) KB.Le.delete(r.slug);
+      }
+      for (const n of fresh) await splitChar(n, false);
       for (const r of (await dbDo('glbs', 'readonly', s => s.getAll())) || []) glbs.set(r.id, { buffer: r.buffer, anims: r.anims || [], rev: 1 });
       bump(); KB.reload(); KB.Ut(); render();
     } catch (e) { /* khong luu duoc thi bo qua */ }
