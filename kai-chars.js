@@ -92,7 +92,7 @@
     if (!mine) return;
 
     const list = $('#clist'); list.innerHTML = '';
-    if (!chars.length) { const e = document.createElement('span'); e.className = 's'; e.textContent = 'Chưa có nhân vật nào. Bấm "Thêm nhân vật" bên dưới.'; list.append(e); }
+    if (!chars.length) { const e = document.createElement('span'); e.className = 's'; e.textContent = 'Chưa có nhân vật nào. Bấm nút "+ Thêm ảnh nhân vật" ở Bước 1 (nếu ảnh có nhiều dáng thì tick ô "Ảnh là bảng nhiều dáng" trước).'; list.append(e); }
     for (const c of chars) {
       const ok = compat(c, m), box = document.createElement('div');
       box.style.cssText = 'display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;' + (ok ? '' : 'opacity:.5');
@@ -109,7 +109,7 @@
       if (c.kind !== 'glb') { const b = document.createElement('button'); b.textContent = 'Xem thử'; b.style.padding = '4px 8px'; b.onclick = () => { const r = KB.En(c.name); if (r) { note(String(r), true); return; } note(''); const pb = $('#cprevbox'); pb.hidden = false; pb.style.display = 'grid'; $('#cprevname').textContent = c.name; $('#cprev').hidden = false; pb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           clearInterval(window.__cprevTimer); const t0 = performance.now();
           window.__cprevTimer = setInterval(() => { if (pb.hidden || !document.body.contains(pb) || !document.querySelector('#cprev') || !KB.Le.has(c.name) && !KB.Ae()[c.name]) { clearInterval(window.__cprevTimer); return; } window.__cprevT = (performance.now() - t0) / 1000; KB.En(c.name); }, 50); }; box.append(b); }
-      const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => remove(c); box.append(d);
+      const d = document.createElement('button'); d.textContent = 'Xóa'; d.style.padding = '4px 8px'; d.onclick = () => { if (d.dataset.sure) { remove(c); return; } d.dataset.sure = 1; d.textContent = 'Bấm lần nữa để xóa'; d.style.color = 'var(--acc)'; setTimeout(() => { delete d.dataset.sure; d.textContent = 'Xóa'; d.style.color = ''; }, 3000); }; box.append(d);
       list.append(box);
     }
     renderMap();
