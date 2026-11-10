@@ -706,12 +706,37 @@ function applySprite(c, o) {
   const poses = c.entry.poses || {}, keys = Object.keys(poses);
   const cv = poses[o.pname] || poses[o.face] || poses.idle || poses.stand || poses[keys[0]];
   if (!cv) return;
-  const tex = texOf(cv);
+  const P = window.KaiPuppet, R = P && c.entry.puppet !== false && !o.lie ? P.rig(cv) : null;
+  const exact = (o.pname && cv === poses[o.pname] && !/^(stand|idle)$/.test(o.pname)) || (o.face && cv === poses[o.face] && cv !== poses.idle);
+  let tex, figH = cv.height, padB = 0, aspect = cv.width / cv.height, puppet = false;
+  if (R && R.ok) {
+    puppet = true;
+    const f = Math.min(1, 900 / cv.height);
+    if (!c.pc || c.pcSrc !== cv) {
+      c.pc = document.createElement('canvas'); c.pc.width = Math.ceil(cv.width * 1.6 * f); c.pc.height = Math.ceil(cv.height * 1.3 * f);
+      c.ptex = new THREE.CanvasTexture(c.pc); c.ptex.colorSpace = THREE.SRGBColorSpace; c.ptex.anisotropy = 8; c.pcSrc = cv;
+    }
+    const g = c.pc.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.pc.width, c.pc.height);
+    padB = (cv.height - 1 - R.bot) * f;
+    g.translate(c.pc.width / 2, c.pc.height - padB); g.imageSmoothingQuality = 'high';
+    const SITP = /^(sit|sitdesk|sitphone|sitsad|crouch|knees|kneel)$/;
+    P.draw(g, cv, { h: R.h * f, t: o.t, pose: o.sit && !SITP.test(o.pname || '') ? 'sit' : (o.cheer && !o.pname ? 'cheer' : o.pname), face: o.face, moving: o.moving, run: o.run, phase: o.phase, key: (c.spec.who || '') + '|3d|' + c.seed, seed: c.seed, light: exact });
+    c.ptex.needsUpdate = true; tex = c.ptex;
+    figH = R.h * f; aspect = c.pc.width / c.pc.height;
+  } else tex = texOf(cv);
   if (c.mat.map !== tex) { c.mat.map = tex; c.mat.emissiveMap = tex; c.mesh.customDepthMaterial.map = tex; c.mat.needsUpdate = true; c.mesh.customDepthMaterial.needsUpdate = true; }
-  const who = wlow(c.spec.who), H = c.H * (who === 'voice' ? 1.1 : 1) * (c.entry.scale ?? 1), W = H * cv.width / cv.height;
+  if (c.H0 == null) c.H0 = c.H;
+  const who = wlow(c.spec.who), H = c.H0 * (who === 'voice' ? 1.1 : 1) * (c.entry.scale ?? 1), W = H * cv.width / cv.height;
   const flip = (o.facing < 0) !== !!c.entry.flip ? -1 : 1, t = o.t;
   const amp = o.moving ? (o.run ? .07 : .035) : 0, bob = o.moving ? Math.abs(Math.sin(o.phase)) * amp : 0;
   const breathe = 1 + .012 * Math.sin(t * 2.2 + c.seed);
+  if (puppet) {
+    const MH = H * c.pc.height / figH;
+    c.mesh.scale.set(MH * aspect * flip, MH, 1);
+    c.mesh.position.set(0, MH / 2 - padB * H / figH + (c.entry.dy || 0) * H, 0); c.mesh.rotation.z = 0; c.H = H;
+    return;
+  }
   c.mesh.scale.set(W * flip, H * breathe, 1);
   let y = H * breathe / 2 + bob + (c.entry.dy || 0) * H, rz = o.moving ? Math.sin(o.phase) * .035 : 0;
   if (o.sit) y -= H * .1;
