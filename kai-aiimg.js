@@ -55,15 +55,26 @@
 <section class="card ai"><h2>2. Cách tạo ảnh</h2>
 <div class="seg"><label class="chk"><input type="radio" name="aimode" id="aiModeRef"> 🖼️ Dùng theo hình tải lên</label><label class="chk"><input type="radio" name="aimode" id="aiModeTxt" checked> ✍️ Tự viết prompt</label></div>
 <div id="aiRefBox" style="display:grid;gap:10px">
-<p class="note">Tải 1 ảnh lên, AI sẽ vẽ ảnh MỚI giống ảnh này (cùng kiểu vẽ, màu sắc, nhân vật). Ô prompt bên dưới ghi điều bạn muốn khác đi (cảnh, hành động, đồ vật). Để trống thì AI vẽ một biến thể của ảnh.</p>
+<p class="note">Tải 1 ảnh lên, rồi ghi ở ô bên dưới bạn muốn đổi gì (tiếng Việt được), giống như sửa ảnh trong Google Flow: giữ nguyên nhân vật, đổi cảnh, đổi hành động, thêm bớt đồ vật.</p>
 <div id="aiDrop" style="border:2px dashed var(--line);border-radius:10px;padding:14px;display:grid;place-items:center;gap:8px;cursor:pointer;min-height:120px;text-align:center">
 <img id="aiRefPrev" hidden alt="Ảnh tải lên" style="max-width:100%;max-height:220px;border-radius:6px">
 <span id="aiDropTxt" class="s">📤 Bấm để chọn ảnh, kéo thả ảnh vào đây, hoặc dán ảnh (Ctrl+V)</span></div>
 <input type="file" id="aiRefFile" accept="image/*" hidden>
 <div class="row"><button type="button" id="aiRefSample">Dùng ảnh mẫu "One more game"</button><button type="button" id="aiRefClear">Xoá ảnh</button></div>
+<label>Cách vẽ theo ảnh<select id="aiRefEngine">
+<option value="puter">⭐ Nano Banana (giống Google Flow): giữ nhân vật, đổi cảnh. Đăng nhập Puter miễn phí</option>
+<option value="poll">Pollinations: cần khoá Pollinations</option>
+<option value="desc">Chỉ theo mô tả từ Gemini: miễn phí, KHÔNG giữ được nhân vật</option></select></label>
+<label class="eng-puter">Mô hình Nano Banana<select id="aiPuterModel">
+<option value="google/gemini-nano-banana-2.1">Nano Banana 2.1 (mới, rẻ lượt)</option>
+<option value="google/gemini-3.1-flash-lite-image">Nano Banana 2 Lite (nhanh nhất)</option>
+<option value="google/gemini-3.1-flash-image-preview">Nano Banana 2 (đẹp hơn, tốn lượt gấp đôi)</option>
+<option value="google/gemini-3-pro-image-preview">Nano Banana Pro (đẹp nhất, tốn lượt gấp 4)</option></select></label>
+<label class="chk eng-puter eng-poll"><input type="checkbox" id="aiRmText" checked> Xoá chữ cũ trong ảnh (chữ mới chèn ở mục 4)</label>
+<p class="note eng-puter">Lần đầu bấm Tạo ảnh sẽ hiện cửa sổ <b>đăng nhập Puter</b> (tạo tài khoản miễn phí, không cần thẻ). Mỗi tài khoản có lượt dùng miễn phí mỗi tháng; hết lượt thì Puter hỏi nâng cấp, không tự trừ tiền. Không tính vào Claude hay Gemini của bạn.</p>
 <div id="aiRefStatus" class="note"></div>
-<label>Mô hình vẽ theo ảnh (khi có khoá)<select id="aiRefModel"></select></label>
-<details class="sub" id="aiDescBox"><summary>Chưa có khoá? Vẽ theo mô tả phong cách (miễn phí)</summary><div style="display:grid;gap:8px;margin-top:8px">
+<label class="eng-poll">Mô hình vẽ theo ảnh (khi có khoá)<select id="aiRefModel"></select></label>
+<details class="sub eng-desc" id="aiDescBox"><summary>Chưa có khoá? Vẽ theo mô tả phong cách (miễn phí)</summary><div style="display:grid;gap:8px;margin-top:8px">
 <p class="note">1) Ghi điều muốn thay đổi (tiếng Việt cũng được) vào ô <b>"Muốn ảnh mới khác ảnh gốc ở điểm nào"</b> phía dưới. 2) Bấm nút chép prompt. 3) Mở Gemini, dán prompt và <b>đính kèm ảnh của bạn</b>. 4) Chép đoạn <b>tiếng Anh</b> Gemini trả về, dán vào ô này. Cách này AI không nhìn thấy ảnh, chỉ vẽ theo lời tả, nên giống phong cách nhưng nhân vật không giống hệt.<br>Muốn đổi chữ trên ảnh (vd ONE MORE GAME → DOPAMINE) thì sửa ở mục <b>4. Chữ trên ảnh</b>.</p>
 <div class="row"><button type="button" id="aiCopyDesc">📋 Chép prompt cho Gemini</button></div>
 <textarea id="aiRefDesc" spellcheck="false" style="min-height:90px" placeholder="Dán prompt TIẾNG ANH Gemini trả về vào đây (không gõ yêu cầu của bạn vào ô này)"></textarea></div></details>
@@ -208,6 +219,7 @@
       $("#aiPromptLbl").textContent = ref ? "Muốn ảnh mới khác ảnh gốc ở điểm nào? (không bắt buộc, tiếng Anh tốt nhất)" : "Mô tả ảnh (prompt)";
       $("#aiPrompt").placeholder = ref ? "vd: same character lying in bed at 3am scrolling his phone, shadow demon whispering behind him" : "vd: a lonely boy sitting on his bed scrolling his phone at 3am, shadow demon whispering behind him";
       LS.set("aimode", ref ? "ref" : "txt");
+      if (ref && $("#aiRefEngine") && $("#aiRefEngine").value === "puter") loadPuter().catch(() => {});
       refStatus();
     };
     $("#aiModeRef").onchange = () => setMode(true);
@@ -234,6 +246,18 @@
     $("#aiKey").addEventListener("input", refStatus);
     $("#aiRefDesc").addEventListener("input", refStatus);
     $("#aiRefModel").onchange = () => LS.set("aiRefModel", $("#aiRefModel").value);
+    const eng = $("#aiRefEngine"), pm = $("#aiPuterModel"), rm = $("#aiRmText");
+    eng.value = LS.get("aiRefEngine", "puter"); pm.value = LS.get("aiPuterModel", pm.value) || pm.options[0].value;
+    rm.checked = LS.get("aiRmText", "1") === "1";
+    const showEng = () => {
+      for (const k of ["puter", "poll", "desc"]) document.querySelectorAll(".eng-" + k).forEach(e => { if (!e.className.split(" ").some(c => c.startsWith("eng-") && c === "eng-" + eng.value)) e.style.display = "none"; });
+      document.querySelectorAll(".eng-" + eng.value).forEach(e => (e.style.display = ""));
+      LS.set("aiRefEngine", eng.value);
+      if (eng.value === "puter" && isRef()) loadPuter().catch(() => {});
+      refStatus();
+    };
+    eng.onchange = showEng; pm.onchange = () => LS.set("aiPuterModel", pm.value); rm.onchange = () => LS.set("aiRmText", rm.checked ? "1" : "0");
+    showEng();
     loadRefModels();
   }
 
@@ -260,9 +284,12 @@
   function refStatus() {
     const el = $("#aiRefStatus"); if (!el) return;
     const key = $("#aiKey").value.trim(), desc = $("#aiRefDesc").value.trim();
+    const engv = $("#aiRefEngine") ? $("#aiRefEngine").value : "poll";
     if (!refBlob) el.innerHTML = "Chưa có ảnh.";
+    else if (engv === "puter") el.innerHTML = "✅ Sẵn sàng: Nano Banana sẽ nhìn trực tiếp ảnh của bạn và sửa theo yêu cầu.";
+    else if (engv === "poll") el.innerHTML = key ? "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ." : "⚠️ Cách này cần khoá Pollinations (mục \"Khoá miễn phí\" bên dưới). Không có khoá thì chọn Nano Banana.";
     else if (key) el.innerHTML = "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ.";
-    else if (desc) el.innerHTML = "✅ Chưa có khoá: app sẽ vẽ theo <b>mô tả phong cách</b> bạn dán (miễn phí).";
+    else if (desc) el.innerHTML = "✅ App sẽ vẽ theo <b>mô tả phong cách</b> bạn dán (miễn phí).";
     else el.innerHTML = "⚠️ Cần thêm 1 trong 2: <b>khoá miễn phí</b> (mục \"Khoá miễn phí\" bên dưới, giống ảnh nhất) hoặc <b>mô tả phong cách</b> từ Gemini (mục ngay dưới, hoàn toàn miễn phí).";
   }
 
@@ -285,6 +312,41 @@
       }).filter(m => m.name && m.img && !m.video);
       if (arr.length) fill(arr);
     } catch {}
+  }
+
+  let puterP = null;
+  function loadPuter() {
+    if (window.puter) return Promise.resolve(window.puter);
+    if (!puterP) puterP = new Promise((ok, bad) => {
+      const sc = document.createElement("script");
+      sc.src = "https://js.puter.com/v2/";
+      sc.onload = () => (window.puter ? ok(window.puter) : bad(new Error("không tải được Puter")));
+      sc.onerror = () => { puterP = null; bad(new Error("không tải được Puter, kiểm tra mạng")); };
+      document.head.appendChild(sc);
+    });
+    return puterP;
+  }
+  const blobToB64 = b => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = bad; r.readAsDataURL(b); });
+  async function elToImage(el) {
+    let src = el && (el.src || (typeof el === "string" ? el : ""));
+    if (!src) throw new Error("Nano Banana không trả về ảnh");
+    let url = src;
+    if (!/^(data|blob):/.test(src)) { const r = await fetch(src); url = URL.createObjectURL(await r.blob()); }
+    else if (src.startsWith("data:")) url = URL.createObjectURL(await (await fetch(src)).blob());
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("ảnh lỗi")); i.src = url; });
+    return { img, url };
+  }
+  function errText(e) {
+    if (!e) return "lỗi không rõ";
+    if (typeof e === "string") return e;
+    return e.error?.message || e.message || e.error?.code || (() => { try { return JSON.stringify(e).slice(0, 200); } catch { return String(e); } })();
+  }
+  function editPrompt(p, W, H) {
+    const frame = W > H * 1.2 ? "a wide 16:9 landscape" : H > W * 1.2 ? "a tall 9:16 portrait" : "a 1:1 square";
+    return `Edit the provided image. Keep exactly the same characters (face, head shape, eyes, body, clothes), the same art style, line work, shading, color palette and lighting as the original image.\n` +
+      `Requested changes (may be written in Vietnamese, follow them carefully): ${p || "put the same characters in a new, different scene"}\n` +
+      ($("#aiRmText").checked ? "Remove ALL text, titles, letters, logos and watermarks from the image. The result must contain no text at all.\n" : "") +
+      `Compose the result for ${frame} frame, keeping the main characters fully visible.`;
   }
 
   async function uploadRef(key) {
@@ -361,12 +423,50 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
     const ref = isRef(), desc = $("#aiRefDesc").value.trim();
     if (ref) {
       if (!refBlob) { msg("Hãy tải 1 ảnh lên trước (bấm vào khung có chữ 📤).", true); return; }
+      const engv = $("#aiRefEngine").value;
+      if (engv === "puter") return generatePuter(p);
+      if (engv === "poll" && !key) { msg("Cách Pollinations cần khoá. Thêm khoá ở mục \"Khoá miễn phí\", hoặc chọn cách Nano Banana.", true); $("#aiKeyBox").open = true; return; }
+      if (engv === "desc" && !desc) { msg("Hãy dán mô tả tiếng Anh từ Gemini vào ô mô tả trước (xem hướng dẫn ngay trên).", true); $("#aiDescBox").open = true; return; }
       if (!key && !desc) { msg("Cần khoá miễn phí hoặc mô tả phong cách từ Gemini. Xem hướng dẫn ngay dưới ảnh.", true); $("#aiDescBox").open = true; return; }
-      if (!key && hasVi(desc)) {
+      if ((engv === "desc" || !key) && hasVi(desc)) {
         msg("Ô \"mô tả phong cách\" phải là đoạn TIẾNG ANH do Gemini viết, không phải yêu cầu sửa của bạn. Hãy ghi yêu cầu sửa vào ô \"Muốn ảnh mới khác ảnh gốc ở điểm nào\", bấm 📋 Chép prompt cho Gemini, dán vào Gemini kèm ảnh, rồi dán kết quả tiếng Anh vào ô mô tả.", true);
         $("#aiDescBox").open = true; return;
       }
     } else if (!p) { msg("Hãy gõ mô tả ảnh trước.", true); $("#aiPrompt").focus(); return; }
+    return generatePollinations(p, key, ref, desc);
+  }
+
+  async function generatePuter(p) {
+    busy = true;
+    $("#aiGo").disabled = $("#aiMore").disabled = true;
+    const t0 = Date.now();
+    let tick = null;
+    try {
+      const P = await loadPuter();
+      if (!P.auth.isSignedIn()) {
+        msg("Đang mở cửa sổ đăng nhập Puter. Tạo tài khoản miễn phí hoặc đăng nhập, rồi app sẽ tự vẽ tiếp.");
+        await P.auth.signIn();
+      }
+      const [, W, H] = outSize();
+      const b64 = await blobToB64(refBlob);
+      tick = setInterval(() => { $("#aiWait").textContent = `Nano Banana đang vẽ... ${Math.round((Date.now() - t0) / 1000)} giây`; }, 500);
+      const el = await P.ai.txt2img(editPrompt(p, W, H), { model: $("#aiPuterModel").value, input_image: b64, input_image_mime_type: "image/jpeg" });
+      const img = await elToImage(el);
+      addToGallery(img.img, img.url, p || "theo ảnh tải lên");
+      msg(`Xong sau ${Math.round((Date.now() - t0) / 1000)} giây. Không ưng thì sửa yêu cầu rồi bấm lại, hoặc "Tạo thêm 1 bản khác".`);
+    } catch (e) {
+      const m = errText(e);
+      if (/insufficient|funds|credit|balance|quota|limit|upgrade|402/i.test(m)) msg("Tài khoản Puter đã hết lượt miễn phí tháng này (" + m + "). Chọn mô hình rẻ hơn (Nano Banana 2.1 / 2 Lite) hoặc chờ sang tháng.", true);
+      else if (/sign|auth|cancel|popup|closed/i.test(m)) msg("Chưa đăng nhập Puter được (" + m + "). Bấm Tạo ảnh lại; nếu trình duyệt chặn cửa sổ bật lên, hãy cho phép rồi thử lại.", true);
+      else msg("Nano Banana không tạo được ảnh: " + m, true);
+    } finally {
+      if (tick) clearInterval(tick);
+      $("#aiWait").textContent = "";
+      busy = false; $("#aiGo").disabled = false; $("#aiMore").disabled = !gallery.length;
+    }
+  }
+
+  async function generatePollinations(p, key, ref, desc) {
     // khong co khoa: Pollinations gioi han khoang 1 anh / 15 giay
     const gap = key ? 0 : 16000 - (Date.now() - lastAt);
     busy = true;
@@ -381,7 +481,7 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
       const params = new URLSearchParams({ width: w, height: h, seed, model: $("#aiModel").value, nologo: "true", private: "true" });
       if ($("#aiEnhance").checked && !ref) params.set("enhance", "true");
       const urls = [];
-      if (ref && key) {
+      if (ref && key && $("#aiRefEngine").value === "poll") {
         // AI nhin truc tiep anh tai len
         $("#aiWait").textContent = "Đang gửi ảnh của bạn cho AI...";
         const imgUrl = await uploadRef(key);
