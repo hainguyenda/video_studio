@@ -65,7 +65,13 @@
 <p class="note">Không có khoá vẫn tạo được ảnh, nhưng phải chờ giữa các lần tạo và đôi khi ảnh có logo nhỏ. Tạo tài khoản miễn phí ở <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--acc)">enter.pollinations.ai</a>, tạo khoá loại <b>Publishable (pk_)</b>, dán vào đây. Khoá chỉ lưu trên trình duyệt của bạn.</p>
 <input type="text" id="aiKey" placeholder="pk_..." autocomplete="off"></div></details>
 </section>
-<section class="card ai"><h2>3. Chữ trên ảnh</h2>
+<section class="card ai"><h2>3. Kích thước ảnh</h2>
+<p class="note">Chọn kích thước trước khi bấm Tạo ảnh để AI vẽ đúng khung (ngang, dọc hay vuông).</p>
+<div class="grid"><label style="grid-column:span 2">Kích thước nhanh<select id="aiSizeSel">${opt(SIZES, (s, i) => `<option value="${i}">${s[0]}</option>`)}<option value="custom">Tự nhập kích thước...</option></select></label>
+<label class="aiCus">Rộng (px)<input type="text" id="aiW" inputmode="numeric" value="1280"></label>
+<label class="aiCus">Cao (px)<input type="text" id="aiH" inputmode="numeric" value="720"></label></div>
+</section>
+<section class="card ai"><h2>4. Chữ trên ảnh</h2>
 <div class="grid"><label style="grid-column:1/-1">Chữ (xuống dòng để tách dòng; để trống nếu không cần chữ)<textarea id="aiTitle" spellcheck="false" style="min-height:60px;font:600 15px/1.4 system-ui"></textarea></label>
 <label>Từ tô màu nhấn (cách nhau dấu phẩy)<input type="text" id="aiAccWords"></label>
 <label>Màu nhấn<select id="aiAccent">${opt(ACCENTS, a => `<option value="${a[0]}">${a[1]}</option>`)}</select></label>
@@ -78,8 +84,8 @@
 
   const right = `
 <div class="col side ai">
-<section class="card"><h2>4. Xem trước &amp; tải ảnh</h2>
-<label>Kích thước<select id="aiSizeSel">${opt(SIZES, (s, i) => `<option value="${i}">${s[0]}</option>`)}</select></label>
+<section class="card"><h2>5. Xem trước &amp; tải ảnh</h2>
+<div id="aiSizeNow" class="s"></div>
 <div class="stage"><canvas id="aiC" width="1280" height="720"></canvas></div>
 <div id="aiMsg" class="s" style="min-height:20px"></div>
 <div id="aiGal" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px"></div>
@@ -124,7 +130,7 @@
   let cur = -1, busy = false, lastAt = 0;
 
   function fields() {
-    return ["aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
+    return ["aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
   }
 
   function init() {
@@ -178,7 +184,14 @@
   }
 
   const accent = () => ACCENTS.find(a => a[0] === $("#aiAccent").value) || ACCENTS[0];
-  const outSize = () => SIZES[+$("#aiSizeSel").value] || SIZES[0];
+  const outSize = () => {
+    const v = $("#aiSizeSel").value;
+    if (v === "custom") {
+      const n = id => Math.max(64, Math.min(4096, Math.round(+$(id).value) || 0));
+      return ["custom", n("#aiW"), n("#aiH")];
+    }
+    return SIZES[+v] || SIZES[0];
+  };
 
   function fullPrompt() {
     const p = $("#aiPrompt").value.trim();
@@ -381,8 +394,11 @@
   }
 
   function draw() {
-    if (!document.body.classList.contains("m-ai") && !$("#aiC")) return;
+    if (!$("#aiC")) return;
+    const cus = $("#aiSizeSel").value === "custom";
+    document.querySelectorAll(".aiCus").forEach(e => (e.style.display = cus ? "" : "none"));
     const [, W, H] = outSize();
+    $("#aiSizeNow").textContent = `Kích thước: ${W} × ${H} px (đổi ở mục 3 bên trái)`;
     // xem truoc nho cho nhe may
     const k = Math.min(1, 1280 / Math.max(W, H));
     render($("#aiC"), Math.round(W * k), Math.round(H * k));
