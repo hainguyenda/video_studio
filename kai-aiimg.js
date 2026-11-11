@@ -60,9 +60,10 @@
 <img id="aiRefPrev" hidden alt="Ảnh tải lên" style="max-width:100%;max-height:220px;border-radius:6px">
 <span id="aiDropTxt" class="s">📤 Bấm để chọn ảnh, kéo thả ảnh vào đây, hoặc dán ảnh (Ctrl+V)</span></div>
 <input type="file" id="aiRefFile" accept="image/*" hidden>
-<div class="row"><button type="button" id="aiRefSample">Dùng ảnh mẫu "One more game"</button><button type="button" id="aiRefClear">Xoá ảnh</button></div>
+<div class="row"><button type="button" id="aiRefSample">Dùng ảnh mẫu "One more game"</button><button type="button" id="aiRefClear">Xoá ảnh</button><button type="button" id="aiRefOnlyText" title="Đã sửa ảnh xong ở Gemini / Google Flow? Đưa ảnh vào khung xem trước để chỉ chèn chữ">➕ Chỉ chèn chữ lên ảnh này</button></div>
 <label>Cách vẽ theo ảnh<select id="aiRefEngine">
 <option value="puter">⭐ Nano Banana (giống Google Flow): giữ nhân vật, đổi cảnh. Đăng nhập Puter miễn phí</option>
+<option value="hf">Hugging Face (Qwen Image Edit): miễn phí, không cần đăng nhập, giới hạn lượt mỗi ngày</option>
 <option value="poll">Pollinations: cần khoá Pollinations</option>
 <option value="desc">Chỉ theo mô tả từ Gemini: miễn phí, KHÔNG giữ được nhân vật</option></select></label>
 <label class="eng-puter">Mô hình Nano Banana<select id="aiPuterModel">
@@ -70,7 +71,12 @@
 <option value="google/gemini-3.1-flash-lite-image">Nano Banana 2 Lite (nhanh nhất)</option>
 <option value="google/gemini-3.1-flash-image-preview">Nano Banana 2 (đẹp hơn, tốn lượt gấp đôi)</option>
 <option value="google/gemini-3-pro-image-preview">Nano Banana Pro (đẹp nhất, tốn lượt gấp 4)</option></select></label>
-<label class="chk eng-puter eng-poll"><input type="checkbox" id="aiRmText" checked> Xoá chữ cũ trong ảnh (chữ mới chèn ở mục 4)</label>
+<div class="row eng-puter"><button type="button" id="aiPuterLogin">🔑 Đăng nhập Puter</button><span id="aiPuterWho" class="s"></span></div>
+<p class="note eng-hf">Dùng máy chủ miễn phí của Hugging Face, không cần tài khoản. Mỗi ngày có giới hạn số lần (khi hết sẽ báo lỗi, chờ hôm sau hoặc thêm mã Hugging Face miễn phí bên dưới để được nhiều lượt hơn). Lúc máy chủ đông có thể phải chờ 1-3 phút. Model này hiểu <b>tiếng Anh</b> tốt nhất.</p>
+<details class="sub eng-hf"><summary>Tuỳ chọn Hugging Face (không bắt buộc)</summary><div style="display:grid;gap:8px;margin-top:8px">
+<label>Mã Hugging Face (hf_..., tạo miễn phí ở huggingface.co → Settings → Access Tokens, loại Read)<input type="text" id="aiHfToken" placeholder="hf_..." autocomplete="off"></label>
+<label>Space<input type="text" id="aiHfSpace" value="Qwen/Qwen-Image-Edit"></label></div></details>
+<label class="chk eng-puter eng-poll eng-hf"><input type="checkbox" id="aiRmText" checked> Xoá chữ cũ trong ảnh (chữ mới chèn ở mục 4)</label>
 <p class="note eng-puter">Lần đầu bấm Tạo ảnh sẽ hiện cửa sổ <b>đăng nhập Puter</b> (tạo tài khoản miễn phí, không cần thẻ). Mỗi tài khoản có lượt dùng miễn phí mỗi tháng; hết lượt thì Puter hỏi nâng cấp, không tự trừ tiền. Không tính vào Claude hay Gemini của bạn.</p>
 <div id="aiRefStatus" class="note"></div>
 <label class="eng-poll">Mô hình vẽ theo ảnh (khi có khoá)<select id="aiRefModel"></select></label>
@@ -162,7 +168,7 @@
   const hasVi = t => /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(t);
 
   function fields() {
-    return ["aiRefDesc", "aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
+    return ["aiHfToken", "aiHfSpace", "aiRefDesc", "aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
   }
 
   function init() {
@@ -250,11 +256,20 @@
     eng.value = LS.get("aiRefEngine", "puter"); pm.value = LS.get("aiPuterModel", pm.value) || pm.options[0].value;
     rm.checked = LS.get("aiRmText", "1") === "1";
     const showEng = () => {
-      for (const k of ["puter", "poll", "desc"]) document.querySelectorAll(".eng-" + k).forEach(e => { if (!e.className.split(" ").some(c => c.startsWith("eng-") && c === "eng-" + eng.value)) e.style.display = "none"; });
+      for (const k of ["puter", "hf", "poll", "desc"]) document.querySelectorAll(".eng-" + k).forEach(e => { if (!e.className.split(" ").some(c => c.startsWith("eng-") && c === "eng-" + eng.value)) e.style.display = "none"; });
       document.querySelectorAll(".eng-" + eng.value).forEach(e => (e.style.display = ""));
       LS.set("aiRefEngine", eng.value);
-      if (eng.value === "puter" && isRef()) loadPuter().catch(() => {});
+      if (eng.value === "puter" && isRef()) loadPuter().then(puterWho).catch(() => {});
       refStatus();
+    };
+    $("#aiPuterLogin").onclick = async () => {
+      try { const P = await loadPuter(); await P.auth.signIn(); puterWho(); msg("Đã đăng nhập Puter. Giờ bấm ✨ Tạo ảnh."); }
+      catch (e) { msg("Chưa đăng nhập được Puter: " + errText(e) + ". Nếu không hiện cửa sổ, hãy cho phép cửa sổ bật lên (popup) cho trang này rồi bấm lại, hoặc chọn cách Hugging Face.", true); }
+    };
+    $("#aiRefOnlyText").onclick = async () => {
+      if (!refBlob) { msg("Hãy tải ảnh lên trước.", true); return; }
+      const url = URL.createObjectURL(refBlob);
+      const im = new Image(); im.onload = () => { addToGallery(im, url, "ảnh của bạn"); msg("Đã đưa ảnh vào khung xem trước. Gõ chữ ở mục 4 rồi tải ảnh."); }; im.src = url;
     };
     eng.onchange = showEng; pm.onchange = () => LS.set("aiPuterModel", pm.value); rm.onchange = () => LS.set("aiRmText", rm.checked ? "1" : "0");
     showEng();
@@ -286,6 +301,7 @@
     const key = $("#aiKey").value.trim(), desc = $("#aiRefDesc").value.trim();
     const engv = $("#aiRefEngine") ? $("#aiRefEngine").value : "poll";
     if (!refBlob) el.innerHTML = "Chưa có ảnh.";
+    else if (engv === "hf") el.innerHTML = "✅ Sẵn sàng: Qwen Image Edit (Hugging Face) sẽ nhìn trực tiếp ảnh của bạn và sửa theo yêu cầu (nên viết yêu cầu bằng tiếng Anh).";
     else if (engv === "puter") el.innerHTML = "✅ Sẵn sàng: Nano Banana sẽ nhìn trực tiếp ảnh của bạn và sửa theo yêu cầu.";
     else if (engv === "poll") el.innerHTML = key ? "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ." : "⚠️ Cách này cần khoá Pollinations (mục \"Khoá miễn phí\" bên dưới). Không có khoá thì chọn Nano Banana.";
     else if (key) el.innerHTML = "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ.";
@@ -326,6 +342,62 @@
     });
     return puterP;
   }
+  async function puterWho() {
+    try { const P = window.puter; if (!P) return; const el = $("#aiPuterWho");
+      if (P.auth.isSignedIn()) { const u = await P.auth.getUser(); el.textContent = "Đã đăng nhập: " + (u.username || "OK"); } else el.textContent = "Chưa đăng nhập";
+    } catch {}
+  }
+
+  async function generateHF(p) {
+    busy = true;
+    $("#aiGo").disabled = $("#aiMore").disabled = true;
+    const t0 = Date.now();
+    const tick = setInterval(() => { $("#aiWait").textContent = `Hugging Face đang vẽ (có thể phải xếp hàng)... ${Math.round((Date.now() - t0) / 1000)} giây`; }, 500);
+    try {
+      $("#aiWait").textContent = "Đang kết nối Hugging Face...";
+      const G = await import("https://esm.sh/@gradio/client@1");
+      const token = $("#aiHfToken").value.trim();
+      const opts = token ? { hf_token: token, token } : {};
+      const app = await G.Client.connect($("#aiHfSpace").value.trim() || "Qwen/Qwen-Image-Edit", opts);
+      const api = await app.view_api();
+      const eps = Object.entries(api.named_endpoints || {});
+      const isImg = q => /image/i.test(q.component || "") || /image|file/i.test(q.python_type?.type || q.type || "");
+      const isTxt = q => /textbox|text/i.test(q.component || "");
+      const ep = eps.find(([, e]) => e.parameters?.some(isImg) && e.parameters?.some(isTxt));
+      if (!ep) throw new Error("Space này không có chức năng sửa ảnh phù hợp");
+      const [name, e] = ep;
+      const [, W, H] = outSize();
+      const args = {};
+      let gotImg = false, gotTxt = false;
+      for (const q of e.parameters) {
+        const n = q.parameter_name || q.label;
+        if (!gotImg && isImg(q)) { args[n] = G.handle_file(refBlob); gotImg = true; }
+        else if (!gotTxt && isTxt(q)) { args[n] = editPrompt(p, W, H); gotTxt = true; }
+        else if (/rewrite/i.test(n)) args[n] = false;
+        else if (/randomize/i.test(n)) args[n] = true;
+        else if (q.parameter_has_default) args[n] = q.parameter_default;
+        else if (q.example_input !== undefined) args[n] = q.example_input;
+      }
+      const res = await app.predict(name, args);
+      let out = Array.isArray(res.data) ? res.data[0] : res.data;
+      if (Array.isArray(out)) out = out[0];
+      if (out && out.image) out = out.image;
+      const src = typeof out === "string" ? out : out?.url || out?.path;
+      if (!src) throw new Error("Hugging Face không trả về ảnh");
+      const img = await elToImage({ src });
+      addToGallery(img.img, img.url, p || "theo ảnh tải lên");
+      msg(`Xong sau ${Math.round((Date.now() - t0) / 1000)} giây. Không ưng thì sửa yêu cầu rồi bấm lại.`);
+    } catch (e) {
+      const m = errText(e);
+      if (/quota|exceeded|gpu|limit|zero/i.test(m)) msg("Hết lượt miễn phí của Hugging Face hôm nay (" + m + "). Thêm mã Hugging Face miễn phí ở mục \"Tuỳ chọn Hugging Face\" để có thêm lượt, hoặc thử lại sau.", true);
+      else if (/sleep|paused|building|not found|404|runtime/i.test(m)) msg("Máy chủ Hugging Face đang tắt hoặc lỗi (" + m + "). Thử lại sau vài phút.", true);
+      else msg("Hugging Face không tạo được ảnh: " + m, true);
+    } finally {
+      clearInterval(tick); $("#aiWait").textContent = "";
+      busy = false; $("#aiGo").disabled = false; $("#aiMore").disabled = !gallery.length;
+    }
+  }
+
   const blobToB64 = b => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = bad; r.readAsDataURL(b); });
   async function elToImage(el) {
     let src = el && (el.src || (typeof el === "string" ? el : ""));
@@ -425,6 +497,7 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
       if (!refBlob) { msg("Hãy tải 1 ảnh lên trước (bấm vào khung có chữ 📤).", true); return; }
       const engv = $("#aiRefEngine").value;
       if (engv === "puter") return generatePuter(p);
+      if (engv === "hf") return generateHF(p);
       if (engv === "poll" && !key) { msg("Cách Pollinations cần khoá. Thêm khoá ở mục \"Khoá miễn phí\", hoặc chọn cách Nano Banana.", true); $("#aiKeyBox").open = true; return; }
       if (engv === "desc" && !desc) { msg("Hãy dán mô tả tiếng Anh từ Gemini vào ô mô tả trước (xem hướng dẫn ngay trên).", true); $("#aiDescBox").open = true; return; }
       if (!key && !desc) { msg("Cần khoá miễn phí hoặc mô tả phong cách từ Gemini. Xem hướng dẫn ngay dưới ảnh.", true); $("#aiDescBox").open = true; return; }
@@ -446,6 +519,7 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
       if (!P.auth.isSignedIn()) {
         msg("Đang mở cửa sổ đăng nhập Puter. Tạo tài khoản miễn phí hoặc đăng nhập, rồi app sẽ tự vẽ tiếp.");
         await P.auth.signIn();
+        puterWho();
       }
       const [, W, H] = outSize();
       const b64 = await blobToB64(refBlob);
@@ -457,7 +531,7 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
     } catch (e) {
       const m = errText(e);
       if (/insufficient|funds|credit|balance|quota|limit|upgrade|402/i.test(m)) msg("Tài khoản Puter đã hết lượt miễn phí tháng này (" + m + "). Chọn mô hình rẻ hơn (Nano Banana 2.1 / 2 Lite) hoặc chờ sang tháng.", true);
-      else if (/sign|auth|cancel|popup|closed/i.test(m)) msg("Chưa đăng nhập Puter được (" + m + "). Bấm Tạo ảnh lại; nếu trình duyệt chặn cửa sổ bật lên, hãy cho phép rồi thử lại.", true);
+      else if (/sign|auth|cancel|popup|closed/i.test(m)) msg("Chưa đăng nhập Puter được (" + m + "). Bấm nút 🔑 Đăng nhập Puter, cho phép cửa sổ bật lên; hoặc đổi sang cách Hugging Face.", true);
       else msg("Nano Banana không tạo được ảnh: " + m, true);
     } finally {
       if (tick) clearInterval(tick);
