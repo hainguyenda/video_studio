@@ -62,8 +62,9 @@
 <input type="file" id="aiRefFile" accept="image/*" hidden>
 <div class="row"><button type="button" id="aiRefSample">Dùng ảnh mẫu "One more game"</button><button type="button" id="aiRefClear">Xoá ảnh</button><button type="button" id="aiRefOnlyText" title="Đã sửa ảnh xong ở Gemini / Google Flow? Đưa ảnh vào khung xem trước để chỉ chèn chữ">➕ Chỉ chèn chữ lên ảnh này</button></div>
 <label>Cách vẽ theo ảnh<select id="aiRefEngine">
-<option value="puter">⭐ Nano Banana (giống Google Flow): giữ nhân vật, đổi cảnh. Đăng nhập Puter miễn phí</option>
-<option value="hf">Hugging Face (Qwen Image Edit): miễn phí, không cần đăng nhập, giới hạn lượt mỗi ngày</option>
+<option value="gem">⭐ Sửa ảnh trong Gemini / Google Flow, app chỉ chèn chữ (chắc chắn chạy, không tốn thêm)</option>
+<option value="hf">Hugging Face (Qwen Image Edit): miễn phí, cần mã Hugging Face miễn phí</option>
+<option value="puter">Nano Banana qua Puter: cần đăng nhập Puter</option>
 <option value="poll">Pollinations: cần khoá Pollinations</option>
 <option value="desc">Chỉ theo mô tả từ Gemini: miễn phí, KHÔNG giữ được nhân vật</option></select></label>
 <label class="eng-puter">Mô hình Nano Banana<select id="aiPuterModel">
@@ -72,9 +73,11 @@
 <option value="google/gemini-3.1-flash-image-preview">Nano Banana 2 (đẹp hơn, tốn lượt gấp đôi)</option>
 <option value="google/gemini-3-pro-image-preview">Nano Banana Pro (đẹp nhất, tốn lượt gấp 4)</option></select></label>
 <div class="row eng-puter"><button type="button" id="aiPuterLogin">🔑 Đăng nhập Puter</button><span id="aiPuterWho" class="s"></span></div>
-<p class="note eng-hf">Dùng máy chủ miễn phí của Hugging Face, không cần tài khoản. Mỗi ngày có giới hạn số lần (khi hết sẽ báo lỗi, chờ hôm sau hoặc thêm mã Hugging Face miễn phí bên dưới để được nhiều lượt hơn). Lúc máy chủ đông có thể phải chờ 1-3 phút. Model này hiểu <b>tiếng Anh</b> tốt nhất.</p>
-<details class="sub eng-hf"><summary>Tuỳ chọn Hugging Face (không bắt buộc)</summary><div style="display:grid;gap:8px;margin-top:8px">
-<label>Mã Hugging Face (hf_..., tạo miễn phí ở huggingface.co → Settings → Access Tokens, loại Read)<input type="text" id="aiHfToken" placeholder="hf_..." autocomplete="off"></label>
+<div class="eng-gem" style="display:grid;gap:8px"><p class="note"><b>Cách chắc chắn nhất, không tốn thêm tiền:</b><br>1) Bấm nút chép prompt bên dưới (đã gộp yêu cầu bạn ghi ở ô "Muốn ảnh mới khác ảnh gốc ở điểm nào").<br>2) Mở app <b>Gemini</b> (hoặc Google Flow), đính kèm ảnh gốc, dán prompt, gửi.<br>3) Tải ảnh Gemini vẽ về máy, rồi bấm vào khung 📤 ở trên để tải ảnh đó lên app.<br>4) Bấm <b>➕ Chỉ chèn chữ lên ảnh này</b>, gõ chữ ở mục 4, rồi tải ảnh.</p>
+<div class="row"><button type="button" id="aiCopyEdit">📋 Chép prompt sửa ảnh cho Gemini</button></div></div>
+<p class="note eng-hf">Hugging Face <b>bắt buộc có mã miễn phí</b> (không có mã sẽ báo hết lượt ngay). Cách lấy: vào huggingface.co, tạo tài khoản miễn phí → Settings → Access Tokens → Create new token → chọn loại <b>Read</b> → chép mã bắt đầu bằng hf_ dán vào ô dưới. Tài khoản miễn phí có vài phút GPU mỗi ngày (khoảng vài ảnh). Lúc đông có thể phải chờ 1-3 phút. Nên viết yêu cầu bằng <b>tiếng Anh</b>.</p>
+<label class="eng-hf">Mã Hugging Face (hf_...)<input type="text" id="aiHfToken" placeholder="hf_..." autocomplete="off"></label>
+<details class="sub eng-hf"><summary>Tuỳ chọn nâng cao</summary><div style="display:grid;gap:8px;margin-top:8px">
 <label>Space<input type="text" id="aiHfSpace" value="Qwen/Qwen-Image-Edit"></label></div></details>
 <label class="chk eng-puter eng-poll eng-hf"><input type="checkbox" id="aiRmText" checked> Xoá chữ cũ trong ảnh (chữ mới chèn ở mục 4)</label>
 <p class="note eng-puter">Lần đầu bấm Tạo ảnh sẽ hiện cửa sổ <b>đăng nhập Puter</b> (tạo tài khoản miễn phí, không cần thẻ). Mỗi tài khoản có lượt dùng miễn phí mỗi tháng; hết lượt thì Puter hỏi nâng cấp, không tự trừ tiền. Không tính vào Claude hay Gemini của bạn.</p>
@@ -95,7 +98,7 @@
 <div class="row"><button class="p big" id="aiGo">✨ Tạo ảnh</button><button id="aiMore" disabled>🔁 Tạo thêm 1 bản khác</button><span id="aiWait" class="s"></span></div>
 <details class="sub"><summary>Ảnh mẫu</summary><div style="margin-top:8px"><img src="assets/ai-mau.jpg" alt="Ảnh mẫu" style="width:100%;border-radius:8px;border:1px solid var(--line)"><p class="note">Phong cách "Như ảnh mẫu" được viết theo ảnh này: nền tối, nhân vật đầu tròn mặc hoodie, bóng đen cám dỗ phát sáng, chữ trắng viền đen có 1 từ màu nhấn.</p></div></details>
 <details class="sub" id="aiKeyBox"><summary>Khoá miễn phí</summary><div style="display:grid;gap:8px;margin-top:8px">
-<p class="note">Chế độ "Tự viết prompt": không có khoá vẫn tạo được ảnh, nhưng phải chờ giữa các lần tạo và đôi khi ảnh có logo nhỏ. Tạo tài khoản miễn phí ở <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--acc)">enter.pollinations.ai</a>, tạo khoá loại <b>Publishable (pk_)</b>, dán vào đây. Khoá chỉ lưu trên trình duyệt của bạn.<br>Chế độ "Dùng theo hình tải lên" <b>cần khoá</b> để AI nhìn được ảnh của bạn (việc này có thể dùng lượt miễn phí của tài khoản).</p>
+<p class="note">Chế độ "Tự viết prompt": không có khoá vẫn tạo được ảnh, nhưng chỉ <b>1 ảnh mỗi 45 giây</b>, dùng model miễn phí chất lượng thấp và ảnh có logo nhỏ. Có khoá thì được chọn model tốt hơn và không có logo. Tạo tài khoản miễn phí ở <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--acc)">enter.pollinations.ai</a>, tạo khoá loại <b>Publishable (pk_)</b>, dán vào đây. Khoá chỉ lưu trên trình duyệt của bạn.<br>Chế độ "Dùng theo hình tải lên" <b>cần khoá</b> để AI nhìn được ảnh của bạn (việc này có thể dùng lượt miễn phí của tài khoản).</p>
 <input type="text" id="aiKey" placeholder="pk_..." autocomplete="off"></div></details>
 </section>
 <section class="card ai"><h2>3. Kích thước ảnh</h2>
@@ -250,13 +253,14 @@
     $("#aiRefClear").onclick = () => { refBlob = null; refPublic = ""; refUp = { key: "", url: "" }; $("#aiRefPrev").hidden = true; $("#aiDropTxt").hidden = false; refStatus(); };
     $("#aiCopyDesc").onclick = copyDesc;
     $("#aiKey").addEventListener("input", refStatus);
+    $("#aiHfToken").addEventListener("input", refStatus);
     $("#aiRefDesc").addEventListener("input", refStatus);
     $("#aiRefModel").onchange = () => LS.set("aiRefModel", $("#aiRefModel").value);
     const eng = $("#aiRefEngine"), pm = $("#aiPuterModel"), rm = $("#aiRmText");
-    eng.value = LS.get("aiRefEngine", "puter"); pm.value = LS.get("aiPuterModel", pm.value) || pm.options[0].value;
+    eng.value = LS.get("aiRefEngine", "gem"); if (!eng.value) eng.value = "gem"; pm.value = LS.get("aiPuterModel", pm.value) || pm.options[0].value;
     rm.checked = LS.get("aiRmText", "1") === "1";
     const showEng = () => {
-      for (const k of ["puter", "hf", "poll", "desc"]) document.querySelectorAll(".eng-" + k).forEach(e => { if (!e.className.split(" ").some(c => c.startsWith("eng-") && c === "eng-" + eng.value)) e.style.display = "none"; });
+      for (const k of ["gem", "puter", "hf", "poll", "desc"]) document.querySelectorAll(".eng-" + k).forEach(e => { if (!e.className.split(" ").some(c => c.startsWith("eng-") && c === "eng-" + eng.value)) e.style.display = "none"; });
       document.querySelectorAll(".eng-" + eng.value).forEach(e => (e.style.display = ""));
       LS.set("aiRefEngine", eng.value);
       if (eng.value === "puter" && isRef()) loadPuter().then(puterWho).catch(() => {});
@@ -265,6 +269,11 @@
     $("#aiPuterLogin").onclick = async () => {
       try { const P = await loadPuter(); await P.auth.signIn(); puterWho(); msg("Đã đăng nhập Puter. Giờ bấm ✨ Tạo ảnh."); }
       catch (e) { msg("Chưa đăng nhập được Puter: " + errText(e) + ". Nếu không hiện cửa sổ, hãy cho phép cửa sổ bật lên (popup) cho trang này rồi bấm lại, hoặc chọn cách Hugging Face.", true); }
+    };
+    $("#aiCopyEdit").onclick = async () => {
+      const want = $("#aiPrompt").value.trim() || "Giữ nguyên nhân vật, đặt nhân vật vào một cảnh mới.";
+      const t = `Sửa ảnh tôi đính kèm. Giữ nguyên 100% nhân vật (khuôn mặt, hình đầu, mắt, quần áo), giữ nguyên kiểu vẽ, nét viền, màu sắc và ánh sáng của ảnh gốc.\nThay đổi như sau:\n${want}\nXoá toàn bộ chữ, tiêu đề, logo trên ảnh (tôi sẽ tự chèn chữ sau). Ảnh khổ ngang 16:9, chừa khoảng trống phía trên cho tiêu đề.`;
+      try { await navigator.clipboard.writeText(t); msg("Đã chép. Mở Gemini, đính kèm ảnh gốc, dán prompt rồi gửi."); } catch { msg("Không chép tự động được, hãy thử lại.", true); }
     };
     $("#aiRefOnlyText").onclick = async () => {
       if (!refBlob) { msg("Hãy tải ảnh lên trước.", true); return; }
@@ -301,6 +310,8 @@
     const key = $("#aiKey").value.trim(), desc = $("#aiRefDesc").value.trim();
     const engv = $("#aiRefEngine") ? $("#aiRefEngine").value : "poll";
     if (!refBlob) el.innerHTML = "Chưa có ảnh.";
+    else if (engv === "gem") el.innerHTML = "Làm theo 4 bước bên dưới. Nút ✨ Tạo ảnh không dùng ở cách này.";
+    else if (engv === "hf" && !$("#aiHfToken").value.trim()) el.innerHTML = "⚠️ Cần dán mã Hugging Face (hf_...) ở ô bên dưới.";
     else if (engv === "hf") el.innerHTML = "✅ Sẵn sàng: Qwen Image Edit (Hugging Face) sẽ nhìn trực tiếp ảnh của bạn và sửa theo yêu cầu (nên viết yêu cầu bằng tiếng Anh).";
     else if (engv === "puter") el.innerHTML = "✅ Sẵn sàng: Nano Banana sẽ nhìn trực tiếp ảnh của bạn và sửa theo yêu cầu.";
     else if (engv === "poll") el.innerHTML = key ? "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ." : "⚠️ Cách này cần khoá Pollinations (mục \"Khoá miễn phí\" bên dưới). Không có khoá thì chọn Nano Banana.";
@@ -355,7 +366,9 @@
     const tick = setInterval(() => { $("#aiWait").textContent = `Hugging Face đang vẽ (có thể phải xếp hàng)... ${Math.round((Date.now() - t0) / 1000)} giây`; }, 500);
     try {
       $("#aiWait").textContent = "Đang kết nối Hugging Face...";
-      const G = await import("https://esm.sh/@gradio/client@1");
+      let G;
+      try { G = await import("https://cdn.jsdelivr.net/npm/@gradio/client@1/+esm"); }
+      catch { G = await import("https://esm.sh/@gradio/client@1"); }
       const token = $("#aiHfToken").value.trim();
       const opts = token ? { hf_token: token, token } : {};
       const app = await G.Client.connect($("#aiHfSpace").value.trim() || "Qwen/Qwen-Image-Edit", opts);
@@ -374,6 +387,7 @@
         if (!gotImg && isImg(q)) { args[n] = G.handle_file(refBlob); gotImg = true; }
         else if (!gotTxt && isTxt(q)) { args[n] = editPrompt(p, W, H); gotTxt = true; }
         else if (/rewrite/i.test(n)) args[n] = false;
+        else if (/steps/i.test(n)) args[n] = Math.min(30, q.parameter_default || 30);
         else if (/randomize/i.test(n)) args[n] = true;
         else if (q.parameter_has_default) args[n] = q.parameter_default;
         else if (q.example_input !== undefined) args[n] = q.example_input;
@@ -497,7 +511,11 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
       if (!refBlob) { msg("Hãy tải 1 ảnh lên trước (bấm vào khung có chữ 📤).", true); return; }
       const engv = $("#aiRefEngine").value;
       if (engv === "puter") return generatePuter(p);
-      if (engv === "hf") return generateHF(p);
+      if (engv === "gem") { msg("Ở cách này bạn sửa ảnh trong Gemini, rồi tải ảnh đã sửa lên và bấm ➕ Chỉ chèn chữ lên ảnh này.", true); return; }
+      if (engv === "hf") {
+        if (!$("#aiHfToken").value.trim()) { msg("Hugging Face cần mã miễn phí (hf_...). Xem hướng dẫn ngay trên ô nhập mã.", true); return; }
+        return generateHF(p);
+      }
       if (engv === "poll" && !key) { msg("Cách Pollinations cần khoá. Thêm khoá ở mục \"Khoá miễn phí\", hoặc chọn cách Nano Banana.", true); $("#aiKeyBox").open = true; return; }
       if (engv === "desc" && !desc) { msg("Hãy dán mô tả tiếng Anh từ Gemini vào ô mô tả trước (xem hướng dẫn ngay trên).", true); $("#aiDescBox").open = true; return; }
       if (!key && !desc) { msg("Cần khoá miễn phí hoặc mô tả phong cách từ Gemini. Xem hướng dẫn ngay dưới ảnh.", true); $("#aiDescBox").open = true; return; }
@@ -541,8 +559,8 @@ ${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa th�
   }
 
   async function generatePollinations(p, key, ref, desc) {
-    // khong co khoa: Pollinations gioi han khoang 1 anh / 15 giay
-    const gap = key ? 0 : 16000 - (Date.now() - lastAt);
+    // khong co khoa: Pollinations gioi han 1 anh / 45 giay moi IP (da kiem tra 12/11/2026)
+    const gap = key ? 0 : 47000 - (Date.now() - lastAt);
     busy = true;
     $("#aiGo").disabled = $("#aiMore").disabled = true;
     try {
