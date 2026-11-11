@@ -64,9 +64,9 @@
 <div id="aiRefStatus" class="note"></div>
 <label>Mô hình vẽ theo ảnh (khi có khoá)<select id="aiRefModel"></select></label>
 <details class="sub" id="aiDescBox"><summary>Chưa có khoá? Vẽ theo mô tả phong cách (miễn phí)</summary><div style="display:grid;gap:8px;margin-top:8px">
-<p class="note">1) Bấm nút chép prompt bên dưới. 2) Mở Gemini, dán prompt và <b>đính kèm ảnh của bạn</b>. 3) Chép đoạn tiếng Anh Gemini trả về, dán vào ô dưới. App sẽ vẽ theo mô tả này (giống phong cách, nhưng không giống bằng khi có khoá).</p>
-<div class="row"><button type="button" id="aiCopyDesc">📋 Chép prompt mô tả ảnh cho Gemini</button></div>
-<textarea id="aiRefDesc" spellcheck="false" style="min-height:90px" placeholder="Dán mô tả phong cách tiếng Anh từ Gemini vào đây"></textarea></div></details>
+<p class="note">1) Ghi điều muốn thay đổi (tiếng Việt cũng được) vào ô <b>"Muốn ảnh mới khác ảnh gốc ở điểm nào"</b> phía dưới. 2) Bấm nút chép prompt. 3) Mở Gemini, dán prompt và <b>đính kèm ảnh của bạn</b>. 4) Chép đoạn <b>tiếng Anh</b> Gemini trả về, dán vào ô này. Cách này AI không nhìn thấy ảnh, chỉ vẽ theo lời tả, nên giống phong cách nhưng nhân vật không giống hệt.<br>Muốn đổi chữ trên ảnh (vd ONE MORE GAME → DOPAMINE) thì sửa ở mục <b>4. Chữ trên ảnh</b>.</p>
+<div class="row"><button type="button" id="aiCopyDesc">📋 Chép prompt cho Gemini</button></div>
+<textarea id="aiRefDesc" spellcheck="false" style="min-height:90px" placeholder="Dán prompt TIẾNG ANH Gemini trả về vào đây (không gõ yêu cầu của bạn vào ô này)"></textarea></div></details>
 </div>
 <p class="note aiTxtOnly">Gõ mô tả ảnh (tiếng Anh cho kết quả chuẩn nhất; tiếng Việt cũng được nếu bật "Để AI viết lại prompt"). App tự thêm phong cách bên dưới, rồi AI vẽ ảnh miễn phí. Ảnh AI vẽ <b>không có chữ</b>, chữ thumbnail do app chèn ở bước 3 nên luôn sắc nét, đúng chính tả.</p>
 <div class="row aiTxtOnly"><button type="button" id="aiSample">🖼️ Dùng mẫu "One more game"</button><button type="button" id="aiCopyHelp">📋 Chép prompt nhờ AI viết mô tả</button></div>
@@ -148,6 +148,7 @@
   let refBlob = null, refPrevUrl = "", refPublic = "", refUp = { key: "", url: "" };
   const REF_FALLBACK = ["kontext", "nanobanana", "seedream", "klein"];
   const isRef = () => $("#aiModeRef").checked;
+  const hasVi = t => /[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(t);
 
   function fields() {
     return ["aiRefDesc", "aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
@@ -300,9 +301,10 @@
   }
 
   async function copyDesc() {
-    const t = `Tôi gửi kèm 1 ảnh. Hãy viết MỘT đoạn mô tả bằng tiếng Anh (60-100 từ) để AI vẽ một ảnh MỚI có phong cách GIỐNG HỆT ảnh này.
-Mô tả: kiểu vẽ (2D hay 3D, hoạt hình hay ảnh thật), nét viền, cách tô bóng, bảng màu chính (kèm mã màu), ánh sáng, nền, thiết kế nhân vật (hình đầu, mắt, da, tóc, quần áo), nhân vật phụ hoặc đồ vật đặc trưng, bố cục.
-KHÔNG mô tả chữ có trên ảnh. Chỉ trả về đúng đoạn mô tả, không giải thích.`;
+    const want = $("#aiPrompt").value.trim();
+    const t = `Tôi gửi kèm 1 ảnh. Hãy viết MỘT prompt bằng tiếng Anh (80-130 từ) để một AI vẽ ảnh KHÔNG nhìn thấy ảnh này vẫn vẽ ra được ảnh MỚI giống nó nhất có thể.
+Prompt phải tả đủ: kiểu vẽ (2D hay 3D, hoạt hình hay ảnh thật), nét viền, cách tô bóng, bảng màu chính, ánh sáng, nền, từng nhân vật (hình đầu, mắt, da, tóc, quần áo, tư thế, nét mặt), đồ vật, bố cục.
+${want ? "Ảnh mới cần thay đổi so với ảnh gốc như sau (đưa thẳng các thay đổi này vào prompt, tả ảnh SAU KHI đã đổi):\n" + want + "\n" : ""}KHÔNG đưa bất kỳ chữ, tiêu đề hay logo nào vào prompt (chữ tôi sẽ tự chèn sau). Chỉ trả về đúng prompt tiếng Anh, không giải thích.`;
     try { await navigator.clipboard.writeText(t); msg("Đã chép. Mở Gemini, dán prompt, đính kèm ảnh của bạn, rồi dán kết quả vào ô mô tả phong cách."); }
     catch { msg("Không chép tự động được, hãy thử lại.", true); }
   }
@@ -340,7 +342,9 @@ KHÔNG mô tả chữ có trên ảnh. Chỉ trả về đúng đoạn mô tả,
   }
 
   function descPrompt(p, desc) {
-    return `${p || "a new scene with the same characters"}. Art style: ${desc}. No text, no letters, no title, no watermark.`;
+    // yeu cau tieng Viet da duoc Gemini dua vao mo ta, khong gui lai cho AI ve
+    const extra = p && !hasVi(p) ? ` ${p}.` : "";
+    return `${desc}.${extra} No text, no letters, no title, no watermark.`;
   }
 
   function msg(t, bad) {
@@ -358,6 +362,10 @@ KHÔNG mô tả chữ có trên ảnh. Chỉ trả về đúng đoạn mô tả,
     if (ref) {
       if (!refBlob) { msg("Hãy tải 1 ảnh lên trước (bấm vào khung có chữ 📤).", true); return; }
       if (!key && !desc) { msg("Cần khoá miễn phí hoặc mô tả phong cách từ Gemini. Xem hướng dẫn ngay dưới ảnh.", true); $("#aiDescBox").open = true; return; }
+      if (!key && hasVi(desc)) {
+        msg("Ô \"mô tả phong cách\" phải là đoạn TIẾNG ANH do Gemini viết, không phải yêu cầu sửa của bạn. Hãy ghi yêu cầu sửa vào ô \"Muốn ảnh mới khác ảnh gốc ở điểm nào\", bấm 📋 Chép prompt cho Gemini, dán vào Gemini kèm ảnh, rồi dán kết quả tiếng Anh vào ô mô tả.", true);
+        $("#aiDescBox").open = true; return;
+      }
     } else if (!p) { msg("Hãy gõ mô tả ảnh trước.", true); $("#aiPrompt").focus(); return; }
     // khong co khoa: Pollinations gioi han khoang 1 anh / 15 giay
     const gap = key ? 0 : 16000 - (Date.now() - lastAt);
@@ -371,7 +379,7 @@ KHÔNG mô tả chữ có trên ảnh. Chỉ trả về đúng đoạn mô tả,
       const w = Math.round(W * k / 16) * 16, h = Math.round(H * k / 16) * 16;
       const seed = Math.floor(Math.random() * 1e9);
       const params = new URLSearchParams({ width: w, height: h, seed, model: $("#aiModel").value, nologo: "true", private: "true" });
-      if ($("#aiEnhance").checked) params.set("enhance", "true");
+      if ($("#aiEnhance").checked && !ref) params.set("enhance", "true");
       const urls = [];
       if (ref && key) {
         // AI nhin truc tiep anh tai len
