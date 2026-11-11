@@ -38,8 +38,7 @@
 
   function all() {
     const out = [];
-    for (const n of Object.keys(KB.Ae())) out.push({ name: n, kind: 'code' });
-    for (const n of KB.Le.keys()) out.push({ name: n, kind: 'img' });
+    for (const n of Object.keys(KB.Ae())) if (!DEFAULTS.includes(n)) out.push({ name: n, kind: 'code' });
     for (const n of glbs.keys()) out.push({ name: n, kind: 'glb' });
     return out;
   }
@@ -92,7 +91,7 @@
     if (!mine) return;
 
     const list = $('#clist'); list.innerHTML = '';
-    if (!chars.length) { const e = document.createElement('span'); e.className = 's'; e.textContent = 'Chưa có nhân vật nào. Bấm nút "+ Thêm ảnh nhân vật" ở Bước 1 (nếu ảnh có nhiều dáng thì tick ô "Ảnh là bảng nhiều dáng" trước).'; list.append(e); }
+    if (!chars.length) { const e = document.createElement('span'); e.className = 's'; e.textContent = 'Chưa có nhân vật nào. Thêm nhân vật bằng code ở Bước 1.'; list.append(e); }
     for (const c of chars) {
       const ok = compat(c, m), box = document.createElement('div');
       box.style.cssText = 'display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;' + (ok ? '' : 'opacity:.5');
@@ -376,27 +375,123 @@
 
   async function restore() {
     try {
-      const imgs = (await dbDo('imgs', 'readonly', s => s.getAll())) || [];
-      for (const rm of [true, false]) {
-        const grp = imgs.filter(r => (r.v ? !!r.rm : true) === rm).map(r => new File([r.blob], r.name, { type: r.blob.type }));
-        if (!grp.length) continue;
-        const cb = $('#rmbg'), old = cb ? cb.checked : true; if (cb) cb.checked = rm;
-        try { await KB.In(grp); } finally { if (cb) cb.checked = old; }
-      }
-      // anh luu tu ban cu: dat lai ten cho dung tieng Viet, xoa nen va tach neu co nhieu hinh
-      const legacy = imgs.filter(r => !r.v);
-      const fresh = new Set();
-      for (const r of legacy) {
-        const n = slug(r.name.replace(/\.[^.]+$/, '').split('__')[0]); fresh.add(n);
-        await dbDo('imgs', 'readwrite', s => s.put({ name: r.name, slug: n, blob: r.blob, rm: true, v: 2 }));
-        if (r.slug && r.slug !== n) KB.Le.delete(r.slug);
-      }
-      for (const n of fresh) await splitChar(n, false);
       for (const r of (await dbDo('glbs', 'readonly', s => s.getAll())) || []) glbs.set(r.id, { buffer: r.buffer, anims: r.anims || [], rev: 1 });
       bump(); KB.reload(); KB.Ut(); render();
     } catch (e) { /* khong luu duoc thi bo qua */ }
   }
 
+  // ------------------------------------------------------------ thu vien code: xem & sua code moi nhan vat
+  const S = { hero: '#ece6d6', line: '#7f7a6f', friend1: '#d8d1c2', friend2: '#c8c4bb', girlSkin: '#efe3d2', scarf: '#e8b33c', coat: '#4e6b52', capY: '#e8b33c', capB: '#3f7fd0', capR: '#c8463c' };
+  const PRESET = {
+    hero: { skin: S.hero }, band: { skin: S.hero, headband: true }, hoodie: { skin: S.hero, hood: true }, hooded: { skin: S.hero, hood: 'up' },
+    friend: { skin: S.friend1, cap: S.capY }, friend2: { skin: S.friend2, cap: S.capB }, friend3: { skin: S.friend1, cap: S.capR },
+    girl: { skin: S.girlSkin, hair: 'bob', scarf: S.scarf, shirt: S.coat }, mom: { skin: S.friend1, hair: 'bun', shirt: '#7b6a8a' },
+    dad: { skin: S.friend2, glasses: true, shirt: '#4d5a6e' }, kid: { skin: S.hero, kid: true }, ghost: { skin: S.hero, ghost: true }, voice: { shadow: true },
+  };
+  const DESC = { hero: 'nhân vật chính, không áo', band: 'nhân vật chính đeo băng đô (lúc tập luyện)', hoodie: 'nhân vật chính mặc hoodie, mũ hạ sau cổ', hooded: 'nhân vật chính trùm mũ hoodie', friend: 'bạn đội mũ vàng', friend2: 'bạn đội mũ xanh', friend3: 'bạn đội mũ đỏ', girl: 'cô gái tóc bob, khăn vàng', mom: 'mẹ', dad: 'bố', kid: 'trẻ con', ghost: 'bóng ma mờ', voice: 'bóng đen cám dỗ' };
+  const v = x => x === undefined || x === null ? 'null' : typeof x === 'string' ? "'" + x + "'" : String(x);
+  function defaultCode(n) {
+    const p = PRESET[n] || {};
+    const row = (k, val, note) => '  ' + (k + ':').padEnd(10) + (val + ',').padEnd(12) + '// ' + note;
+    return [
+      '// Nhân vật mặc định "' + n + '" (' + (DESC[n] || '') + ').',
+      '// Sửa các giá trị trong "look" rồi bấm Lưu & dùng. Màu viết dạng \'#rrggbb\'.',
+      '// Muốn vẽ lại hoàn toàn: xoá hết và dán code nhân vật do AI viết (cùng kiểu với Bước 1).',
+      'const look = {',
+      row('skin', v(p.skin || (p.shadow ? null : S.hero)), 'màu da'),
+      row('edge', v(p.shadow ? null : S.line), 'màu nét viền'),
+      row('hood', v(p.hood || false), "true = hoodie mũ hạ, 'up' = trùm mũ, false = không"),
+      row('shirt', v(p.shirt), 'màu áo (null = không áo)'),
+      row('headband', v(!!p.headband), 'băng đô màu nhấn'),
+      row('cap', v(p.cap), 'màu mũ lưỡi trai (null = không mũ)'),
+      row('hair', v(p.hair), "kiểu tóc: 'bob' | 'bun' | null"),
+      row('scarf', v(p.scarf), 'màu khăn quàng (null = không)'),
+      row('glasses', v(!!p.glasses), 'đeo kính'),
+      row('shoes', v(p.shoes), 'màu giày (null = không vẽ giày)'),
+      row('kid', v(!!p.kid), 'dáng trẻ con, đầu nhỏ hơn'),
+      row('ghost', v(!!p.ghost), 'bóng ma mờ'),
+      row('shadow', v(!!p.shadow), 'true = bóng đen cám dỗ'),
+      row('glow', v(p.glow), 'màu phát sáng của bóng đen (null = màu nhấn)'),
+      '};',
+      "return u.bean(g, x, y, h, Object.assign({}, o, look, { who: '' }));",
+    ].join('\n');
+  }
+  const lmsg = (t, bad) => { const e = $('#clibMsg'); if (e) { e.textContent = t || ''; e.style.color = bad ? 'var(--bad)' : 'var(--mut)'; } };
+  function libFill(keep) {
+    const sel = $('#clibSel'); if (!sel) return;
+    const A = KB.Ae(), cur = keep || sel.value || 'hoodie';
+    const mine = Object.keys(A).filter(n => !DEFAULTS.includes(n));
+    sel.innerHTML = '<optgroup label="Mặc định">' + DEFAULTS.map(n => '<option value="' + n + '">' + n + ' - ' + (DESC[n] || '') + (A[n] ? ' (đã sửa)' : '') + '</option>').join('') + '</optgroup>' +
+      (mine.length ? '<optgroup label="Nhân vật của tôi">' + mine.map(n => '<option value="' + n + '">' + n + '</option>').join('') + '</optgroup>' : '');
+    sel.value = [...sel.options].some(o => o.value === cur) ? cur : 'hoodie';
+    libShow();
+  }
+  function libShow() {
+    const n = $('#clibSel').value, A = KB.Ae(), isDef = DEFAULTS.includes(n);
+    $('#clibCode').value = A[n] ? A[n].code : defaultCode(n);
+    $('#clibReset').hidden = !(isDef && A[n]);
+    $('#clibDel').hidden = isDef;
+    lmsg(isDef ? (A[n] ? 'Đang dùng bản bạn đã sửa.' : 'Đang dùng bản gốc.') : 'Nhân vật của bạn.');
+    libPrev(n, true);
+  }
+  function libPrev(n, quiet) {
+    const cv = $('#clibPrev'); if (!cv || !KB.bean) return null;
+    KB.Ut(); KB.errs().delete(n);
+    const g = cv.getContext('2d'), P = ['stand', 'punch', 'cheer', 'wave', 'sitphone', 'slump'], F = ['neutral', 'determined', 'smile', 'smile', 'tired', 'sad'];
+    const VN = { stand: 'đứng', punch: 'đấm', cheer: 'vui', wave: 'vẫy tay', sitphone: 'ngồi', slump: 'buồn' }, w = cv.width / P.length;
+    cv.hidden = false; g.clearRect(0, 0, cv.width, cv.height);
+    P.forEach((p, i) => {
+      g.save(); g.beginPath(); g.rect(i * w, 0, w, cv.height); g.clip();
+      try { KB.bean(g, i * w + w / 2, cv.height - 28, 160, { who: n, pose: p, face: F[i], t: 1.3, pkey: 'lib|' + n + '|' + p, hold: p === 'sitphone' ? 'phone' : undefined }); }
+      catch (e) { KB.errs().set(n, e.message || String(e)); }
+      g.restore(); g.fillStyle = '#9a9aa6'; g.font = '16px sans-serif'; g.textAlign = 'center'; g.fillText(VN[p], i * w + w / 2, cv.height - 6);
+    });
+    const err = KB.errs().get(n);
+    if (err && !quiet) lmsg('Code lỗi: ' + err + '. Hãy sửa lại, hoặc dán lỗi này cho AI để sửa.', true);
+    return err || null;
+  }
+  function libSave() {
+    const n = $('#clibSel').value, code = $('#clibCode').value.trim(), A = KB.Ae();
+    if (!code) { lmsg('Ô code đang trống.', true); return; }
+    const isDef = DEFAULTS.includes(n);
+    if (isDef && !A[n] && code === defaultCode(n).trim()) { lmsg('Code chưa thay đổi gì.'); return; }
+    const old = A[n];
+    A[n] = { code };
+    const err = libPrev(n, true);
+    if (err) { if (old) A[n] = old; else delete A[n]; KB.Ut(); lmsg('Chưa lưu vì code lỗi: ' + err, true); return; }
+    KB.saveAe(); bump(); KB.reload(); KB.Ut(); KB.load();
+    libFill(n); render();
+    lmsg('Đã lưu. Phim và ảnh dùng "' + n + '" sẽ dùng bản này.');
+  }
+  function libReset() {
+    const n = $('#clibSel').value, A = KB.Ae();
+    if (!A[n]) return;
+    delete A[n]; KB.saveAe(); bump(); KB.reload(); KB.Ut(); KB.load();
+    libFill(n); lmsg('Đã khôi phục bản gốc của "' + n + '".');
+  }
+  function buildLib() {
+    if (!$('#clib')) return;
+    $('#clibSel').onchange = libShow;
+    $('#clibSave').onclick = libSave;
+    $('#clibPrevBtn').onclick = () => {
+      const n = $('#clibSel').value, A = KB.Ae(), old = A[n];
+      A[n] = { code: $('#clibCode').value };   // xem thu ban dang go, chua luu
+      const err = libPrev(n, false);
+      if (old) A[n] = old; else delete A[n]; KB.Ut();
+      if (!err) lmsg('Đây là bản đang sửa (chưa lưu). Ưng thì bấm Lưu & dùng.');
+    };
+    $('#clibCopy').onclick = async () => { try { await navigator.clipboard.writeText($('#clibCode').value); lmsg('Đã chép code.'); } catch (e) { $('#clibCode').select(); lmsg('Hãy bấm giữ để chép thủ công.', true); } };
+    $('#clibReset').onclick = libReset;
+    $('#clibDel').onclick = () => {
+      const b = $('#clibDel'), n = $('#clibSel').value;
+      if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Bấm lần nữa để xóa'; setTimeout(() => { delete b.dataset.sure; b.textContent = '🗑 Xóa nhân vật'; }, 3000); return; }
+      delete b.dataset.sure; b.textContent = '🗑 Xóa nhân vật';
+      const A = KB.Ae(); delete A[n]; KB.saveAe(); bump(); KB.reload(); KB.Ut(); libFill('hoodie'); render(); lmsg('Đã xóa "' + n + '".');
+    };
+    $('#clib').addEventListener('toggle', () => { if ($('#clib').open) libFill(); });
+    $('#cadd') && $('#cadd').addEventListener('click', () => setTimeout(() => libFill(), 250));
+  }
+
   window.KaiUI = { render, promptExtra };
-  if (build()) { render(); restore(); }
+  if (build()) { buildLib(); render(); restore(); }
 })();
