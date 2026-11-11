@@ -52,17 +52,33 @@
 
   // ---------- giao dien ----------
   const left = `
-<section class="card ai"><h2>2. Mô tả ảnh bạn muốn</h2>
-<p class="note">Gõ mô tả ảnh (tiếng Anh cho kết quả chuẩn nhất; tiếng Việt cũng được nếu bật "Để AI viết lại prompt"). App tự thêm phong cách bên dưới, rồi AI vẽ ảnh miễn phí. Ảnh AI vẽ <b>không có chữ</b>, chữ thumbnail do app chèn ở bước 3 nên luôn sắc nét, đúng chính tả.</p>
-<div class="row"><button type="button" id="aiSample">🖼️ Dùng mẫu "One more game"</button><button type="button" id="aiCopyHelp">📋 Chép prompt nhờ AI viết mô tả</button></div>
+<section class="card ai"><h2>2. Cách tạo ảnh</h2>
+<div class="seg"><label class="chk"><input type="radio" name="aimode" id="aiModeRef"> 🖼️ Dùng theo hình tải lên</label><label class="chk"><input type="radio" name="aimode" id="aiModeTxt" checked> ✍️ Tự viết prompt</label></div>
+<div id="aiRefBox" style="display:grid;gap:10px">
+<p class="note">Tải 1 ảnh lên, AI sẽ vẽ ảnh MỚI giống ảnh này (cùng kiểu vẽ, màu sắc, nhân vật). Ô prompt bên dưới ghi điều bạn muốn khác đi (cảnh, hành động, đồ vật). Để trống thì AI vẽ một biến thể của ảnh.</p>
+<div id="aiDrop" style="border:2px dashed var(--line);border-radius:10px;padding:14px;display:grid;place-items:center;gap:8px;cursor:pointer;min-height:120px;text-align:center">
+<img id="aiRefPrev" hidden alt="Ảnh tải lên" style="max-width:100%;max-height:220px;border-radius:6px">
+<span id="aiDropTxt" class="s">📤 Bấm để chọn ảnh, kéo thả ảnh vào đây, hoặc dán ảnh (Ctrl+V)</span></div>
+<input type="file" id="aiRefFile" accept="image/*" hidden>
+<div class="row"><button type="button" id="aiRefSample">Dùng ảnh mẫu "One more game"</button><button type="button" id="aiRefClear">Xoá ảnh</button></div>
+<div id="aiRefStatus" class="note"></div>
+<label>Mô hình vẽ theo ảnh (khi có khoá)<select id="aiRefModel"></select></label>
+<details class="sub" id="aiDescBox"><summary>Chưa có khoá? Vẽ theo mô tả phong cách (miễn phí)</summary><div style="display:grid;gap:8px;margin-top:8px">
+<p class="note">1) Bấm nút chép prompt bên dưới. 2) Mở Gemini, dán prompt và <b>đính kèm ảnh của bạn</b>. 3) Chép đoạn tiếng Anh Gemini trả về, dán vào ô dưới. App sẽ vẽ theo mô tả này (giống phong cách, nhưng không giống bằng khi có khoá).</p>
+<div class="row"><button type="button" id="aiCopyDesc">📋 Chép prompt mô tả ảnh cho Gemini</button></div>
+<textarea id="aiRefDesc" spellcheck="false" style="min-height:90px" placeholder="Dán mô tả phong cách tiếng Anh từ Gemini vào đây"></textarea></div></details>
+</div>
+<p class="note aiTxtOnly">Gõ mô tả ảnh (tiếng Anh cho kết quả chuẩn nhất; tiếng Việt cũng được nếu bật "Để AI viết lại prompt"). App tự thêm phong cách bên dưới, rồi AI vẽ ảnh miễn phí. Ảnh AI vẽ <b>không có chữ</b>, chữ thumbnail do app chèn ở bước 3 nên luôn sắc nét, đúng chính tả.</p>
+<div class="row aiTxtOnly"><button type="button" id="aiSample">🖼️ Dùng mẫu "One more game"</button><button type="button" id="aiCopyHelp">📋 Chép prompt nhờ AI viết mô tả</button></div>
+<label id="aiPromptLbl" style="color:var(--fg)">Mô tả ảnh (prompt)</label>
 <textarea id="aiPrompt" spellcheck="false" style="min-height:110px" placeholder="vd: a lonely boy sitting on his bed scrolling his phone at 3am, shadow demon whispering behind him"></textarea>
-<div class="grid"><label>Phong cách<select id="aiStyle">${opt(STYLES, s => `<option value="${s[0]}">${s[1]}</option>`)}</select></label>
-<label>Mô hình AI<select id="aiModel">${opt(MODELS, m => `<option value="${m[0]}">${m[1]}</option>`)}</select></label></div>
+<div class="grid"><label class="aiTxtOnly">Phong cách<select id="aiStyle">${opt(STYLES, s => `<option value="${s[0]}">${s[1]}</option>`)}</select></label>
+<label class="aiTxtOnly">Mô hình AI<select id="aiModel">${opt(MODELS, m => `<option value="${m[0]}">${m[1]}</option>`)}</select></label></div>
 <label class="chk"><input type="checkbox" id="aiEnhance"> Để AI viết lại prompt cho đẹp hơn (nên bật khi gõ tiếng Việt)</label>
 <div class="row"><button class="p big" id="aiGo">✨ Tạo ảnh</button><button id="aiMore" disabled>🔁 Tạo thêm 1 bản khác</button><span id="aiWait" class="s"></span></div>
 <details class="sub"><summary>Ảnh mẫu</summary><div style="margin-top:8px"><img src="assets/ai-mau.jpg" alt="Ảnh mẫu" style="width:100%;border-radius:8px;border:1px solid var(--line)"><p class="note">Phong cách "Như ảnh mẫu" được viết theo ảnh này: nền tối, nhân vật đầu tròn mặc hoodie, bóng đen cám dỗ phát sáng, chữ trắng viền đen có 1 từ màu nhấn.</p></div></details>
-<details class="sub"><summary>Khoá miễn phí (không bắt buộc)</summary><div style="display:grid;gap:8px;margin-top:8px">
-<p class="note">Không có khoá vẫn tạo được ảnh, nhưng phải chờ giữa các lần tạo và đôi khi ảnh có logo nhỏ. Tạo tài khoản miễn phí ở <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--acc)">enter.pollinations.ai</a>, tạo khoá loại <b>Publishable (pk_)</b>, dán vào đây. Khoá chỉ lưu trên trình duyệt của bạn.</p>
+<details class="sub" id="aiKeyBox"><summary>Khoá miễn phí</summary><div style="display:grid;gap:8px;margin-top:8px">
+<p class="note">Chế độ "Tự viết prompt": không có khoá vẫn tạo được ảnh, nhưng phải chờ giữa các lần tạo và đôi khi ảnh có logo nhỏ. Tạo tài khoản miễn phí ở <a href="https://enter.pollinations.ai" target="_blank" rel="noopener" style="color:var(--acc)">enter.pollinations.ai</a>, tạo khoá loại <b>Publishable (pk_)</b>, dán vào đây. Khoá chỉ lưu trên trình duyệt của bạn.<br>Chế độ "Dùng theo hình tải lên" <b>cần khoá</b> để AI nhìn được ảnh của bạn (việc này có thể dùng lượt miễn phí của tài khoản).</p>
 <input type="text" id="aiKey" placeholder="pk_..." autocomplete="off"></div></details>
 </section>
 <section class="card ai"><h2>3. Kích thước ảnh</h2>
@@ -128,9 +144,13 @@
   // ---------- trang thai ----------
   const gallery = []; // {url, img, prompt}
   let cur = -1, busy = false, lastAt = 0;
+  // anh tham chieu (che do "Dung theo hinh tai len")
+  let refBlob = null, refPrevUrl = "", refPublic = "", refUp = { key: "", url: "" };
+  const REF_FALLBACK = ["kontext", "nanobanana", "seedream", "klein"];
+  const isRef = () => $("#aiModeRef").checked;
 
   function fields() {
-    return ["aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
+    return ["aiRefDesc", "aiW", "aiH", "aiPrompt", "aiStyle", "aiModel", "aiTitle", "aiAccWords", "aiAccent", "aiPos", "aiFont", "aiSize", "aiAlign", "aiSizeSel", "aiKey"];
   }
 
   function init() {
@@ -157,6 +177,7 @@
     }
 
     $("#aiSample").onclick = () => { applySample(true); save(); draw(); };
+    initRef(save);
     $("#aiGo").onclick = () => generate();
     $("#aiMore").onclick = () => generate();
     $("#aiPng").onclick = () => download("png");
@@ -166,6 +187,124 @@
     // ve lai khi phong chu tai xong
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
     draw();
+  }
+
+  // ---------- che do theo anh tai len ----------
+  function initRef(save) {
+    let modeNow = null;
+    const setMode = ref => {
+      // moi che do giu o prompt rieng
+      const m = ref ? "ref" : "txt";
+      if (modeNow && modeNow !== m) {
+        LS.set("aiPrompt_" + modeNow, $("#aiPrompt").value);
+        $("#aiPrompt").value = LS.get("aiPrompt_" + m, "");
+        LS.set("aiPrompt", $("#aiPrompt").value);
+      }
+      modeNow = m;
+      $("#aiModeRef").checked = ref; $("#aiModeTxt").checked = !ref;
+      $("#aiRefBox").style.display = ref ? "grid" : "none";
+      document.querySelectorAll(".aiTxtOnly").forEach(e => (e.style.display = ref ? "none" : ""));
+      $("#aiPromptLbl").textContent = ref ? "Muốn ảnh mới khác ảnh gốc ở điểm nào? (không bắt buộc, tiếng Anh tốt nhất)" : "Mô tả ảnh (prompt)";
+      $("#aiPrompt").placeholder = ref ? "vd: same character lying in bed at 3am scrolling his phone, shadow demon whispering behind him" : "vd: a lonely boy sitting on his bed scrolling his phone at 3am, shadow demon whispering behind him";
+      LS.set("aimode", ref ? "ref" : "txt");
+      refStatus();
+    };
+    $("#aiModeRef").onchange = () => setMode(true);
+    $("#aiModeTxt").onchange = () => setMode(false);
+    setMode(LS.get("aimode", "txt") === "ref");
+
+    const pick = $("#aiRefFile"), drop = $("#aiDrop");
+    drop.onclick = () => pick.click();
+    pick.onchange = () => { if (pick.files[0]) loadRef(pick.files[0]); pick.value = ""; };
+    drop.ondragover = e => { e.preventDefault(); drop.style.borderColor = "var(--acc)"; };
+    drop.ondragleave = () => (drop.style.borderColor = "");
+    drop.ondrop = e => { e.preventDefault(); drop.style.borderColor = ""; const f = [...(e.dataTransfer.files || [])].find(f => /^image\//.test(f.type)); if (f) loadRef(f); };
+    document.addEventListener("paste", e => {
+      if (!document.body.classList.contains("m-ai") || !isRef()) return;
+      const it = [...(e.clipboardData?.items || [])].find(i => /^image\//.test(i.type));
+      if (it) { e.preventDefault(); loadRef(it.getAsFile()); }
+    });
+    $("#aiRefSample").onclick = async () => {
+      const b = await (await fetch("assets/ai-mau.jpg")).blob();
+      await loadRef(b, location.protocol === "https:" ? new URL("assets/ai-mau.jpg", location.href).href : "");
+    };
+    $("#aiRefClear").onclick = () => { refBlob = null; refPublic = ""; refUp = { key: "", url: "" }; $("#aiRefPrev").hidden = true; $("#aiDropTxt").hidden = false; refStatus(); };
+    $("#aiCopyDesc").onclick = copyDesc;
+    $("#aiKey").addEventListener("input", refStatus);
+    $("#aiRefDesc").addEventListener("input", refStatus);
+    $("#aiRefModel").onchange = () => LS.set("aiRefModel", $("#aiRefModel").value);
+    loadRefModels();
+  }
+
+  async function loadRef(file, publicUrl = "") {
+    try {
+      const url = URL.createObjectURL(file);
+      const im = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("không đọc được ảnh")); i.src = url; });
+      // thu nho con canh dai toi da 1536 cho nhe
+      const k = Math.min(1, 1536 / Math.max(im.naturalWidth, im.naturalHeight));
+      const cv = document.createElement("canvas");
+      cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+      cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      refBlob = await new Promise(ok => cv.toBlob(ok, "image/jpeg", 0.9));
+      if (refPrevUrl) URL.revokeObjectURL(refPrevUrl);
+      refPrevUrl = URL.createObjectURL(refBlob);
+      refPublic = publicUrl; refUp = { key: "", url: "" };
+      $("#aiRefPrev").src = refPrevUrl; $("#aiRefPrev").hidden = false; $("#aiDropTxt").hidden = true;
+      refStatus();
+      msg("Đã nhận ảnh. Gõ điều muốn khác đi (nếu có) rồi bấm ✨ Tạo ảnh.");
+    } catch (e) { msg("Không đọc được ảnh: " + (e.message || e), true); }
+  }
+
+  function refStatus() {
+    const el = $("#aiRefStatus"); if (!el) return;
+    const key = $("#aiKey").value.trim(), desc = $("#aiRefDesc").value.trim();
+    if (!refBlob) el.innerHTML = "Chưa có ảnh.";
+    else if (key) el.innerHTML = "✅ Có ảnh và có khoá: AI sẽ nhìn trực tiếp ảnh của bạn để vẽ.";
+    else if (desc) el.innerHTML = "✅ Chưa có khoá: app sẽ vẽ theo <b>mô tả phong cách</b> bạn dán (miễn phí).";
+    else el.innerHTML = "⚠️ Cần thêm 1 trong 2: <b>khoá miễn phí</b> (mục \"Khoá miễn phí\" bên dưới, giống ảnh nhất) hoặc <b>mô tả phong cách</b> từ Gemini (mục ngay dưới, hoàn toàn miễn phí).";
+  }
+
+  async function loadRefModels() {
+    const sel = $("#aiRefModel");
+    const fill = list => {
+      sel.innerHTML = list.map(m => `<option value="${m.name}">${m.name}${m.paid ? " (tốn lượt tài khoản)" : ""}</option>`).join("");
+      const saved = LS.get("aiRefModel", "");
+      if (list.some(m => m.name === saved)) sel.value = saved;
+      else { const free = list.find(m => !m.paid); if (free) sel.value = free.name; }
+    };
+    fill(REF_FALLBACK.map(name => ({ name })));
+    try {
+      const r = await fetch("https://gen.pollinations.ai/image/models");
+      const js = await r.json();
+      const arr = (Array.isArray(js) ? js : js.models || js.data || []).map(m => typeof m === "string" ? { name: m } : {
+        name: m.name || m.id, paid: !!(m.paid_only || m.paidOnly || m.tier === "paid"),
+        img: (m.input_modalities || m.inputModalities || []).includes("image"),
+        video: (m.output_modalities || m.outputModalities || []).includes("video"),
+      }).filter(m => m.name && m.img && !m.video);
+      if (arr.length) fill(arr);
+    } catch {}
+  }
+
+  async function uploadRef(key) {
+    if (refPublic) return refPublic;
+    if (refUp.url && refUp.key === key) return refUp.url;
+    const r = await fetch("https://media.pollinations.ai/upload", { method: "POST", headers: { Authorization: "Bearer " + key, "Content-Type": "image/jpeg" }, body: refBlob });
+    const t = await r.text();
+    if (!r.ok) throw new Error(`UPLOAD HTTP ${r.status} ${t.slice(0, 120)}`);
+    let u = ""; try { u = JSON.parse(t).url || ""; } catch {}
+    u = (u || t).trim();
+    if (!/^https?:\/\//.test(u)) throw new Error("UPLOAD không nhận được link ảnh");
+    refUp = { key, url: u };
+    return u;
+  }
+
+  async function copyDesc() {
+    const t = `Tôi gửi kèm 1 ảnh. Hãy viết MỘT đoạn mô tả bằng tiếng Anh (60-100 từ) để AI vẽ một ảnh MỚI có phong cách GIỐNG HỆT ảnh này.
+Mô tả: kiểu vẽ (2D hay 3D, hoạt hình hay ảnh thật), nét viền, cách tô bóng, bảng màu chính (kèm mã màu), ánh sáng, nền, thiết kế nhân vật (hình đầu, mắt, da, tóc, quần áo), nhân vật phụ hoặc đồ vật đặc trưng, bố cục.
+KHÔNG mô tả chữ có trên ảnh. Chỉ trả về đúng đoạn mô tả, không giải thích.`;
+    try { await navigator.clipboard.writeText(t); msg("Đã chép. Mở Gemini, dán prompt, đính kèm ảnh của bạn, rồi dán kết quả vào ô mô tả phong cách."); }
+    catch { msg("Không chép tự động được, hãy thử lại.", true); }
   }
 
   function applySample(showImage) {
@@ -200,6 +339,10 @@
     return extra ? `${p}. ${extra}` : p;
   }
 
+  function descPrompt(p, desc) {
+    return `${p || "a new scene with the same characters"}. Art style: ${desc}. No text, no letters, no title, no watermark.`;
+  }
+
   function msg(t, bad) {
     const el = $("#aiMsg");
     el.textContent = t || "";
@@ -210,8 +353,12 @@
   async function generate() {
     if (busy) return;
     const p = $("#aiPrompt").value.trim();
-    if (!p) { msg("Hãy gõ mô tả ảnh trước.", true); $("#aiPrompt").focus(); return; }
     const key = $("#aiKey").value.trim();
+    const ref = isRef(), desc = $("#aiRefDesc").value.trim();
+    if (ref) {
+      if (!refBlob) { msg("Hãy tải 1 ảnh lên trước (bấm vào khung có chữ 📤).", true); return; }
+      if (!key && !desc) { msg("Cần khoá miễn phí hoặc mô tả phong cách từ Gemini. Xem hướng dẫn ngay dưới ảnh.", true); $("#aiDescBox").open = true; return; }
+    } else if (!p) { msg("Hãy gõ mô tả ảnh trước.", true); $("#aiPrompt").focus(); return; }
     // khong co khoa: Pollinations gioi han khoang 1 anh / 15 giay
     const gap = key ? 0 : 16000 - (Date.now() - lastAt);
     busy = true;
@@ -225,11 +372,28 @@
       const seed = Math.floor(Math.random() * 1e9);
       const params = new URLSearchParams({ width: w, height: h, seed, model: $("#aiModel").value, nologo: "true", private: "true" });
       if ($("#aiEnhance").checked) params.set("enhance", "true");
-      const enc = encodeURIComponent(fullPrompt());
       const urls = [];
-      if (key) { params.set("key", key); urls.push(`https://gen.pollinations.ai/image/${enc}?${params}`); params.delete("key"); }
-      params.set("referrer", "videostudio-kai");
-      urls.push(`https://image.pollinations.ai/prompt/${enc}?${params}`);
+      if (ref && key) {
+        // AI nhin truc tiep anh tai len
+        $("#aiWait").textContent = "Đang gửi ảnh của bạn cho AI...";
+        const imgUrl = await uploadRef(key);
+        const rp = `${p || "a new variation of the reference image with a slightly different pose and scene"}. ` +
+          `Use the reference image as the style guide: keep exactly the same art style, line work, shading, color palette, lighting, background mood and character design. ` +
+          `No text, no letters, no title, no watermark.`;
+        params.set("model", $("#aiRefModel").value || "kontext");
+        params.set("image", imgUrl);
+        params.set("key", key);
+        urls.push(`https://gen.pollinations.ai/image/${encodeURIComponent(rp)}?${params}`);
+        if (desc) { // du phong: neu ve theo anh loi thi ve theo mo ta phong cach
+          const fp = new URLSearchParams(params); fp.delete("image"); fp.set("model", "flux");
+          urls.push(`https://gen.pollinations.ai/image/${encodeURIComponent(descPrompt(p, desc))}?${fp}`);
+        }
+      } else {
+        const enc = encodeURIComponent(ref ? descPrompt(p, desc) : fullPrompt());
+        if (key) { params.set("key", key); urls.push(`https://gen.pollinations.ai/image/${enc}?${params}`); params.delete("key"); }
+        params.set("referrer", "videostudio-kai");
+        urls.push(`https://image.pollinations.ai/prompt/${enc}?${params}`);
+      }
 
       const t0 = Date.now();
       const tick = setInterval(() => { $("#aiWait").textContent = `AI đang vẽ... ${Math.round((Date.now() - t0) / 1000)} giây`; }, 500);
@@ -240,11 +404,12 @@
         }
       } finally { clearInterval(tick); $("#aiWait").textContent = ""; lastAt = Date.now(); }
       if (!img) throw new Error(lastErr);
-      addToGallery(img.img, img.url, p);
+      addToGallery(img.img, img.url, p || (ref ? "theo ảnh tải lên" : ""));
       msg(`Xong sau ${Math.round((Date.now() - t0) / 1000)} giây. Không ưng thì bấm "Tạo thêm 1 bản khác".`);
     } catch (e) {
       const m = String(e.message || e);
-      if (/429|rate|limit|queue/i.test(m)) msg("Máy chủ miễn phí đang bận hoặc bạn tạo quá nhanh. Chờ khoảng 30 giây rồi thử lại, hoặc thêm khoá miễn phí ở mục \"Khoá miễn phí\".", true);
+      if (/^UPLOAD/.test(m)) msg("Không gửi được ảnh của bạn cho AI (" + m.replace(/^UPLOAD\s*/, "") + "). Kiểm tra lại khoá, hoặc dùng cách mô tả phong cách từ Gemini (miễn phí).", true);
+      else if (/429|rate|limit|queue/i.test(m)) msg("Máy chủ miễn phí đang bận hoặc bạn tạo quá nhanh. Chờ khoảng 30 giây rồi thử lại, hoặc thêm khoá miễn phí ở mục \"Khoá miễn phí\".", true);
       else if (/401|402|403|key|auth|pollen/i.test(m)) msg("Khoá không dùng được hoặc hết lượt miễn phí trong giờ này. Xoá khoá để dùng chế độ không cần khoá, hoặc thử lại sau.", true);
       else if (/abort|timeout/i.test(m)) msg("AI vẽ quá lâu (hơn 2 phút). Hãy thử lại, hoặc chọn mô hình Turbo.", true);
       else msg("Không tạo được ảnh: " + m + ". Kiểm tra mạng rồi thử lại.", true);
