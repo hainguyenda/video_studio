@@ -1132,8 +1132,8 @@
     // Vẽ tay/chân dạng "ống mềm": đường cong ĐI QUA khớp IK, thon dần, 2 lớp (viền #111318 + màu trong)
     function drawLimb(ctx, x0, y0, jx, jy, ex, ey, w0, w1, fill, outline, olw, glow) {
       // Điểm điều khiển để đường cong đi qua đúng khuỷu/gối ở giữa (t = 0.5), làm mềm 85%
-      const qx = jx + (2 * jx - (x0 + ex) / 2 - jx) * 0.85;
-      const qy = jy + (2 * jy - (y0 + ey) / 2 - jy) * 0.85;
+      const qx = jx + (2 * jx - (x0 + ex) / 2 - jx) * 0.45;
+      const qy = jy + (2 * jy - (y0 + ey) / 2 - jy) * 0.45;
       const N = 16, L = [], R = [];
       let a0 = 0, a1 = 0;
       for (let i = 0; i <= N; i++) {
@@ -1230,8 +1230,9 @@
         hipY: breath * 2.5 + floatY,
         torsoLean: breath * 0.015,
         headTilt: Math.sin(t * 1.4) * 0.03,
-        lHandX: -30, lHandY: 22 + breath * 2,
-        rHandX: 30,  rHandY: 22 + breath * 2,
+        // Tay buông tự nhiên dọc thân, khuỷu hơi chùng (không gập ngược)
+        lHandX: -28, lHandY: 56 + breath * 1.5,
+        rHandX: 28,  rHandY: 56 + breath * 1.5,
         lFootX: -17, lFootY: 96,
         rFootX: 17,  rFootY: 96,
         elbowL: -1, elbowR: 1,
@@ -1331,7 +1332,7 @@
           p.hipY = -3 + breath * 2.2 + floatY;
           p.torsoLean = -0.05;
           p.headTilt = -0.06;
-          p.lHandX = -32; p.lHandY = 14 + breath * 2;
+          p.lHandX = -24; p.lHandY = 46 + breath * 2;
           p.rHandX = 36;  p.rHandY = -24 + breath * 2.5;
           p.lFootX = -24; p.lFootY = 96;
           p.rFootX = 24;  p.rFootY = 96;
@@ -1363,7 +1364,7 @@
           p.hipY = breath * 2.5 + floatY;
           p.torsoLean = -0.03 + wv * 0.02;
           p.headTilt = 0.05 + wv * 0.04;
-          p.lHandX = -28; p.lHandY = 24;
+          p.lHandX = -28; p.lHandY = 56;
           p.rHandX = 40 + wv * 14; p.rHandY = -44 + Math.abs(wv) * 4;
           p.elbowR = 1;
           p.handStyleR = 'open';
@@ -1441,7 +1442,7 @@
           p.prop = 'door';
           p.torsoLean = 0.06;
           p.headTilt = -0.02;
-          p.lHandX = -26; p.lHandY = 22 + breath * 2;
+          p.lHandX = -28; p.lHandY = 56 + breath * 1.5;
           p.rHandX = 44; p.rHandY = 40;      // tay nắm cửa (app tự kéo theo cửa)
           p.lFootX = -14; p.rFootX = 22;
           p.elbowR = 1;
@@ -1473,7 +1474,7 @@
           p.hipY = breath * 2 + floatY;
           p.torsoLean = 0.08;
           p.headTilt = -0.02;
-          p.lHandX = -26; p.lHandY = 20;
+          p.lHandX = -28; p.lHandY = 56;
           p.rHandX = 58;  p.rHandY = -12 + Math.sin(t * 3.5) * 3;
           p.elbowR = 1;
           p.handStyleR = 'point';
@@ -1974,8 +1975,10 @@
       const upperLeg = isKid ? 38 : 49;
       const lowerLeg = isKid ? 38 : 49;
 
-      const lShoulder = { x: shoulderPos.x - 16, y: shoulderPos.y + 6 - shrug };
-      const rShoulder = { x: shoulderPos.x + 16, y: shoulderPos.y + 6 - shrug };
+      // Vai đặt sát mép áo để tay buông bên hông, không vắt ngang ngực
+      const shoulderSpread = isKid ? 17 : 21;
+      const lShoulder = { x: shoulderPos.x - shoulderSpread, y: shoulderPos.y + 7 - shrug };
+      const rShoulder = { x: shoulderPos.x + shoulderSpread, y: shoulderPos.y + 7 - shrug };
 
       // Cửa mở dần: tay phải bám theo tay nắm cửa
       const doorAt = charInst.doorAt != null ? Number(charInst.doorAt) : 0.4;
@@ -2195,13 +2198,16 @@
         // VAI CHÍNH: Áo Hoodie xám than Cel-Shaded kèm mũ, túi trước và dây áo đu đưa
         const wTop = 24;
         const wBot = 26;
-        ctx.beginPath();
-        ctx.moveTo(-wTop, -torsoLen + 6);
-        ctx.quadraticCurveTo(0, -torsoLen - 6, wTop, -torsoLen + 6);
-        ctx.quadraticCurveTo(wBot + 4, -torsoLen * 0.4, wBot, 6);
-        ctx.quadraticCurveTo(0, 12, -wBot, 6);
-        ctx.quadraticCurveTo(-wBot - 4, -torsoLen * 0.4, -wTop, -torsoLen + 6);
-        ctx.closePath();
+        const hoodiePath = () => {
+          ctx.beginPath();
+          ctx.moveTo(-wTop, -torsoLen + 6);
+          ctx.quadraticCurveTo(0, -torsoLen - 6, wTop, -torsoLen + 6);
+          ctx.quadraticCurveTo(wBot + 4, -torsoLen * 0.4, wBot, 6);
+          ctx.quadraticCurveTo(0, 12, -wBot, 6);
+          ctx.quadraticCurveTo(-wBot - 4, -torsoLen * 0.4, -wTop, -torsoLen + 6);
+          ctx.closePath();
+        };
+        hoodiePath();
         ctx.fillStyle = outfitColor;
         ctx.fill();
 
@@ -2210,7 +2216,8 @@
         ctx.clip();
         ctx.fillStyle = shadeHex(outfitColor, -0.28);
         ctx.beginPath();
-        ctx.rect(lightDirX > 0 ? -wBot - 8 : 4, -torsoLen - 10, wBot + 4, torsoLen + 30);
+        const shSide = lightDirX > 0 ? -1 : 1;
+        ctx.ellipse(shSide * (wBot + 10), -torsoLen * 0.45, 22, torsoLen * 0.9, 0, 0, Math.PI * 2);
         ctx.fill();
         // Ánh sáng xanh từ điện thoại / laptop lên ngực áo
         if (target.holdingPhone || target.screenGlow) {
@@ -2222,7 +2229,8 @@
         }
         ctx.restore();
 
-        // Viền áo Hoodie
+        // Viền áo Hoodie (vẽ lại đúng đường áo; trước đây vô tình viền khung bóng chữ nhật)
+        hoodiePath();
         ctx.strokeStyle = outlineColor;
         ctx.lineWidth = lw;
         ctx.stroke();
