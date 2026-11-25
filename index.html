@@ -3382,28 +3382,128 @@
           }
         }
 
-        // Giai điệu piano & pad tự động theo nhịp 1.35 giây
-        if (Math.abs(globalTime - this.lastNoteTime) >= 1.35) {
-          this.lastNoteTime = globalTime;
-          const scales = {
-            night:   [146.83, 174.61, 220.00, 261.63, 293.66], // D minor trầm
-            tense:   [130.81, 155.56, 196.00, 207.65],         // C minor căng thẳng
-            shock:   [110.00, 116.54, 220.00],                 // Bass trầm kịch tính
-            rain:    [164.81, 196.00, 246.94, 293.66],         // E minor nhẹ
-            cabin:   [196.00, 246.94, 293.66, 329.63],         // G major vui tươi nhẹ
-            hope:    [196.00, 246.94, 293.66, 392.00, 329.63], // G major ấm (bước ngoặt)
-            sunrise: [174.61, 220.00, 261.63, 349.23, 440.00], // F major ấm áp bứt phá
-          };
-          const notes = scales[mood] || scales.night;
-          const idx = Math.floor(globalTime) % notes.length;
-          this.playNote(notes[idx], 1.8, 'sine', mood === 'sunrise' || mood === 'hope' ? 0.16 : 0.11);
-          // Thêm nốt pad trầm làm nền
-          if (idx === 0) {
-            this.playNote(notes[0] * 0.5, 2.8, 'triangle', 0.09);
-          }
+        this.musicStep(mood, globalTime);
+      }
+
+      // ===== NHẠC NỀN THỦ TỤC: pad hợp âm + bass + arpeggio piano + trống nhẹ + reverb =====
+      ensureMusicBus() {
+        if (this.musicBus) return;
+        const c = this.ctx;
+        this.musicBus = c.createGain();
+        const vol = (state.script && state.script.musicVolume != null) ? state.script.musicVolume : 1;
+        this.musicBus.gain.value = 2.6 * vol;
+        // reverb tự tạo (impulse nhiễu tắt dần 2.6s)
+        const len = Math.floor(c.sampleRate * 2.6);
+        const ir = c.createBuffer(2, len, c.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+          const d = ir.getChannelData(ch);
+          for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4);
+        }
+        this.reverb = c.createConvolver(); this.reverb.buffer = ir;
+        this.revGain = c.createGain(); this.revGain.gain.value = 0.55;
+        this.musicBus.connect(this.masterGain);
+        this.musicBus.connect(this.reverb); this.reverb.connect(this.revGain); this.revGain.connect(this.masterGain);
+        // nhiễu cho hi-hat
+        const nb = c.createBuffer(1, c.sampleRate * 0.3, c.sampleRate);
+        const nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        this.noiseBuf = nb;
+        this.lastStep = -1; this.lastMood = null;
+      }
+
+      // 1 nốt có envelope, phát vào musicBus tại thời điểm `when`
+      voice(freq, when, dur, { type = 'sine', vol = 0.1, attack = 0.01, cutoff = 2400, detune = 0, release = 0.3 } = {}) {
+        const c = this.ctx;
+        const o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+        o.type = type; o.frequency.setValueAtTime(freq, when); o.detune.setValueAtTime(detune, when);
+        f.type = 'lowpass'; f.frequency.setValueAtTime(cutoff, when); f.Q.value = 0.4;
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.linearRampToValueAtTime(vol, when + attack);
+        g.gain.setTargetAtTime(0.0001, when + Math.max(attack, dur - release), release / 3);
+        o.connect(f); f.connect(g); g.connect(this.musicBus);
+        o.start(when); o.stop(when + dur + release + 0.1);
+      }
+
+      piano(freq, when, vol) {
+        // tiếng "piano mềm": sine + họa âm, tắt nhanh
+        this.voice(freq, when, 1.6, { type: 'sine', vol, attack: 0.005, release: 1.2 });
+        this.voice(freq * 2, when, 0.7, { type: 'triangle', vol: vol * 0.22, attack: 0.004, release: 0.5, cutoff: 3000 });
+      }
+
+      pad(freqs, when, dur, vol, cutoff) {
+        freqs.forEach(fq => {
+          this.voice(fq, when, dur, { type: 'sawtooth', vol: vol, attack: dur * 0.35, release: dur * 0.5, cutoff, detune: -7 });
+          this.voice(fq, when, dur, { type: 'sawtooth', vol: vol, attack: dur * 0.35, release: dur * 0.5, cutoff, detune: 7 });
+        });
+      }
+
+      kick(when, vol = 0.5) {
+        const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+        o.frequency.setValueAtTime(120, when); o.frequency.exponentialRampToValueAtTime(42, when + 0.18);
+        g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.35);
+        o.connect(g); g.connect(this.masterGain); o.start(when); o.stop(when + 0.4);
+      }
+
+      hat(when, vol = 0.05) {
+        const c = this.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+        s.buffer = this.noiseBuf; f.type = 'highpass'; f.frequency.value = 7000;
+        g.gain.setValueAtTime(vol, when); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+        s.connect(f); f.connect(g); g.connect(this.musicBus); s.start(when); s.stop(when + 0.08);
+      }
+
+      musicStep(mood, globalTime) {
+        this.ensureMusicBus();
+        const mv = (state.script && state.script.musicVolume != null) ? state.script.musicVolume : 1;
+        if (this._mv !== mv) { this._mv = mv; this.musicBus.gain.setTargetAtTime(2.6 * mv, this.ctx.currentTime, 0.1); }
+        const M = ProceduralAudioEngine.MOODS[mood] || ProceduralAudioEngine.MOODS.night;
+        const stepDur = 60 / M.bpm / 2;              // nốt móc đơn
+        const step = Math.floor(globalTime / stepDur);
+        if (step === this.lastStep) return;
+        // tua/nhảy thời gian: không phát dồn
+        if (step < this.lastStep || step - this.lastStep > 4) this.lastStep = step - 1;
+        const when = this.ctx.currentTime + 0.03;
+        for (let st = this.lastStep + 1; st <= step; st++) this.playStep(M, st, when, stepDur);
+        this.lastStep = step;
+      }
+
+      playStep(M, st, when, stepDur) {
+        const S = 8;                                  // 8 móc đơn = 1 ô nhịp 4/4
+        const bar = Math.floor(st / S), pos = ((st % S) + S) % S;
+        const chord = M.prog[((bar % M.prog.length) + M.prog.length) % M.prog.length];
+        const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+        const barDur = stepDur * S;
+        if (pos === 0) {
+          this.pad(chord.map(n => hz(n)), when, barDur * 1.05, M.padVol, M.padCut);
+          this.voice(hz(chord[0] - 12), when, barDur * 0.9, { type: 'triangle', vol: M.bassVol, attack: 0.02, release: 0.6, cutoff: 600 });
+          if (M.kick) this.kick(when, M.kick);
+        }
+        if (M.kick && pos === 4) this.kick(when, M.kick * 0.8);
+        if (M.bassPulse && pos % 2 === 0 && pos) this.voice(hz(chord[0] - 12), when, stepDur * 1.6, { type: 'triangle', vol: M.bassVol * 0.6, attack: 0.01, release: 0.2, cutoff: 500 });
+        if (M.hat && pos % 2 === 1) this.hat(when, M.hat);
+        const pat = M.arp[pos];
+        if (pat != null) {
+          const tones = [chord[0], chord[1], chord[2], chord[0] + 12, chord[1] + 12, chord[2] + 12];
+          const n = tones[pat % tones.length] + (M.arpOct || 12);
+          this.piano(hz(n), when, M.arpVol);
+        }
+        // nốt giai điệu thưa ở nửa sau mỗi 2 ô nhịp
+        if (M.melody && pos === 6 && bar % 2 === 1) {
+          const n = M.melody[Math.floor(bar / 2) % M.melody.length];
+          this.piano(hz(n), when, M.arpVol * 1.25);
         }
       }
     }
+
+    // Hợp âm theo số MIDI (60 = C4). arp: chỉ số nốt trong hợp âm cho 8 móc đơn (null = nghỉ)
+    ProceduralAudioEngine.MOODS = {
+      night:   { bpm: 72, prog: [[50,53,57],[46,50,53],[41,45,48],[48,52,55]], padVol: 0.018, padCut: 900,  bassVol: 0.10, arp: [0,null,2,null,1,null,3,null], arpVol: 0.07, melody: [69,67,65,64] },
+      tense:   { bpm: 84, prog: [[48,51,55],[44,48,51],[49,53,56],[47,50,55]], padVol: 0.016, padCut: 700,  bassVol: 0.13, bassPulse: true, arp: [0,null,null,1,null,null,2,null], arpVol: 0.055, arpOct: 0 },
+      shock:   { bpm: 70, prog: [[45,48,52],[46,49,53]], padVol: 0.02, padCut: 600, bassVol: 0.15, bassPulse: true, arp: [null,null,null,null,null,null,null,null], arpVol: 0 },
+      rain:    { bpm: 76, prog: [[52,55,59],[48,52,55],[43,47,50],[50,54,57]], padVol: 0.017, padCut: 1000, bassVol: 0.09, arp: [0,2,1,3,null,2,4,null], arpVol: 0.06, melody: [71,69,67,66] },
+      cabin:   { bpm: 88, prog: [[55,59,62],[52,55,59],[48,52,55],[50,54,57]], padVol: 0.016, padCut: 1300, bassVol: 0.09, arp: [0,2,4,2,1,3,5,3], arpVol: 0.055, hat: 0.03 },
+      hope:    { bpm: 84, prog: [[55,59,62],[50,54,57],[52,55,59],[48,52,55]], padVol: 0.02, padCut: 1500, bassVol: 0.10, arp: [0,2,3,2,1,3,4,3], arpVol: 0.07, melody: [74,71,72,74] },
+      resolve: { bpm: 80, prog: [[48,52,55],[55,59,62],[57,60,64],[53,57,60]], padVol: 0.02, padCut: 1600, bassVol: 0.11, arp: [0,2,4,2,1,3,5,3], arpVol: 0.065, kick: 0.3, melody: [72,74,76,79] },
+      sunrise: { bpm: 96, prog: [[53,57,60],[48,52,55],[50,53,57],[46,50,53]], padVol: 0.02, padCut: 1800, bassVol: 0.12, bassPulse: true, arp: [0,2,3,5,1,3,4,2], arpVol: 0.065, kick: 0.45, hat: 0.035, melody: [72,76,77,79] },
+    };
 
     const audioEngine = new ProceduralAudioEngine();
 
@@ -4369,7 +4469,7 @@
     };
 
     // ===== CHUYỂN CODE VIDEO CŨ {"shots":[...]} SANG KỊCH BẢN MỚI =====
-    const MUSIC_TO_MOOD = { sad: 'night', dark: 'tense', none: 'silent', hope: 'hope', rise: 'sunrise', resolve: 'sunrise' };
+    const MUSIC_TO_MOOD = { sad: 'night', dark: 'tense', none: 'silent', hope: 'hope', rise: 'sunrise', resolve: 'resolve', calm: 'night', upbeat: 'cabin' };
     const OLD_POSE = {
       stand: 'idle', relaxed: 'idle', slump: 'idle', phone: 'phone', reach: 'whisper', point: 'point', wave: 'wave', cheer: 'cheer',
       fist: 'determined', headhold: 'headhold', facepalm: 'headhold', arms: 'determined', shrug: 'idle', hug: 'idle', guard: 'determined',
