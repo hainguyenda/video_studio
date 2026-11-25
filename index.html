@@ -1231,11 +1231,12 @@
         torsoLean: breath * 0.015,
         headTilt: Math.sin(t * 1.4) * 0.03,
         // Tay buông tự nhiên dọc thân, khuỷu hơi chùng (không gập ngược)
-        lHandX: -28, lHandY: 56 + breath * 1.5,
-        rHandX: 28,  rHandY: 56 + breath * 1.5,
+        lHandX: -27, lHandY: 60 + breath * 1.2,
+        rHandX: 27,  rHandY: 60 + breath * 1.2,
         lFootX: -17, lFootY: 96,
         rFootX: 17,  rFootY: 96,
-        elbowL: -1, elbowR: 1,
+        // Tay buông: khuỷu cong RA NGOÀI (trái cong sang trái, phải cong sang phải)
+        elbowL: 1, elbowR: -1,
         kneeL: 1, kneeR: 1,
         handStyleL: 'relaxed',
         handStyleR: 'relaxed',
@@ -1336,7 +1337,7 @@
           p.rHandX = 36;  p.rHandY = -24 + breath * 2.5;
           p.lFootX = -24; p.lFootY = 96;
           p.rFootX = 24;  p.rFootY = 96;
-          p.elbowL = -1;  p.elbowR = 1;
+          p.elbowL = 1;   p.elbowR = 1;
           p.handStyleL = 'fist';
           p.handStyleR = 'fist';
           break;
