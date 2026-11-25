@@ -655,7 +655,7 @@
         name: 'Vai chính (Day Zero)',
         skinColor: '#F7F4EE',
         outfitColor: '#374151',
-        pantsColor: '#111318',
+        pantsColor: '#24272F',
         outlineColor: '#111318',
         outlineWeight: 4.0,
         hairStyle: 'bald', // 'bald' (mẫu kênh) | 'tufts' | 'messy'
@@ -698,6 +698,13 @@
       { id: 'phone', label: 'Đứng cầm ĐT (Phone)' },
       { id: 'cheer', label: 'Giơ 2 tay (Cheer)' },
       { id: 'headhold', label: 'Ôm đầu (Head hold)' },
+      { id: 'walk_phone', label: 'Vừa đi vừa xem ĐT' },
+      { id: 'type_laptop', label: 'Gõ laptop (có bàn)' },
+      { id: 'eat_table', label: 'Ngồi bàn ăn' },
+      { id: 'open_door', label: 'Mở cửa' },
+      { id: 'lie_bed', label: 'Nằm giường' },
+      { id: 'lie_alarm', label: 'Nằm với tay tắt báo thức' },
+      { id: 'sleep', label: 'Ngủ say' },
     ];
 
     const EXPRESSIONS = [
@@ -1122,20 +1129,67 @@
       return { jx, jy, ex, ey };
     }
 
-    // Vẽ tay/chân mềm mại theo đường cong Bezier qua khớp IK
-    function drawCurvedLimb(ctx, x0, y0, jx, jy, ex, ey, thickness, color) {
+    // Vẽ tay/chân dạng "ống mềm": đường cong ĐI QUA khớp IK, thon dần, 2 lớp (viền #111318 + màu trong)
+    function drawLimb(ctx, x0, y0, jx, jy, ex, ey, w0, w1, fill, outline, olw, glow) {
+      // Điểm điều khiển để đường cong đi qua đúng khuỷu/gối ở giữa (t = 0.5), làm mềm 85%
+      const qx = jx + (2 * jx - (x0 + ex) / 2 - jx) * 0.85;
+      const qy = jy + (2 * jy - (y0 + ey) / 2 - jy) * 0.85;
+      const N = 16, L = [], R = [];
+      let a0 = 0, a1 = 0;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N, u = 1 - t;
+        const px = u * u * x0 + 2 * u * t * qx + t * t * ex;
+        const py = u * u * y0 + 2 * u * t * qy + t * t * ey;
+        const dx = 2 * u * (qx - x0) + 2 * t * (ex - qx);
+        const dy = 2 * u * (qy - y0) + 2 * t * (ey - qy);
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        // Thon dần + phình nhẹ ở bắp
+        const half = (lerp(w0, w1, t) + Math.sin(t * Math.PI) * (w0 - w1) * 0.25) / 2;
+        L.push([px + nx * half, py + ny * half]);
+        R.push([px - nx * half, py - ny * half]);
+        if (i === 0) a0 = Math.atan2(dy, dx);
+        if (i === N) a1 = Math.atan2(dy, dx);
+      }
       ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = thickness;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      // Dùng đường cong Quadratic qua khớp IK để tạo độ mềm dẻo kiểu hoạt hình vector hiện đại
-      ctx.quadraticCurveTo(jx, jy, ex, ey);
+      ctx.moveTo(L[0][0], L[0][1]);
+      for (let i = 1; i <= N; i++) ctx.lineTo(L[i][0], L[i][1]);
+      ctx.arc(ex, ey, w1 / 2, a1 + Math.PI / 2, a1 - Math.PI / 2, true);
+      for (let i = N; i >= 0; i--) ctx.lineTo(R[i][0], R[i][1]);
+      ctx.arc(x0, y0, w0 / 2, a0 - Math.PI / 2, a0 + Math.PI / 2, true);
+      ctx.closePath();
+      ctx.lineJoin = 'round';
+      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = 14; }
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = olw;
       ctx.stroke();
       ctx.restore();
     }
+
+    // Chớp mắt cố định theo thời gian (xuất lần nào cũng giống nhau), thỉnh thoảng chớp đôi
+    function strHash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967295; }
+    function blinkAt(t, seed) {
+      const per = 3.0 + seed * 1.8;
+      const tt = t + seed * 7.3;
+      const ph = ((tt % per) + per) % per;
+      const cyc = Math.floor(tt / per);
+      if (ph < 0.17) return Math.sin((ph / 0.17) * Math.PI);
+      const r = Math.sin(cyc * 12.9898 + seed * 78.233) * 43758.5453;
+      if (r - Math.floor(r) > 0.7 && ph > 0.27 && ph < 0.44) return Math.sin(((ph - 0.27) / 0.17) * Math.PI);
+      return 0;
+    }
+
+    // Toạ độ đồ vật trong bối cảnh để mắt liếc đúng chỗ (tỉ lệ khung hình)
+    const ENV_ANCHORS = {
+      bedroom_night: { clock: [0.76, 0.22], window: [0.28, 0.28] },
+      city_rain: { window: [0.5, 0.3] },
+      airplane_cabin: { window: [0.2, 0.4] },
+      sunrise_breakthrough: { window: [0.5, 0.45], sun: [0.5, 0.55] },
+    };
 
     // ---------- 6. BỘ ĐỆM CHUYỂN ĐỘNG & CHỚP MẮT CHO TỪNG NHÂN VẬT ----------
     const rigMemory = new Map();
@@ -1186,6 +1240,11 @@
         handStyleR: 'relaxed',
         holdingPhone: false,
         seated: false,
+        prop: null,        // 'laptop' | 'table' | 'door' | 'bed'
+        lying: false,
+        screenGlow: false, // ánh xanh màn hình hắt lên mặt
+        eyesClosed: false,
+        reach: 0,          // 0..1 với tay (nằm tắt báo thức)
       };
 
       switch (pose) {
@@ -1281,8 +1340,11 @@
           p.handStyleR = 'fist';
           break;
         }
+        case 'type_laptop':
         case 'work_desk': {
           p.seated = true;
+          p.prop = 'laptop';
+          p.screenGlow = true;
           const typeL = Math.sin(t * 14) * 3;
           const typeR = Math.cos(t * 14) * 3;
           p.hipY = 44 + breath * 1.5;
@@ -1343,6 +1405,70 @@
           p.handStyleR = 'open';
           break;
         }
+        case 'walk_phone': {
+          const w = t * 4.6;
+          const stride = Math.sin(w);
+          p.holdingPhone = true;
+          p.hipY = Math.abs(Math.sin(w)) * -5;
+          p.torsoLean = 0.12;
+          p.headTilt = 0.26 + Math.sin(w) * 0.02;
+          p.lFootX = -stride * 26; p.lFootY = 96 - Math.max(0, Math.cos(w)) * 14;
+          p.rFootX = stride * 26;  p.rFootY = 96 - Math.max(0, -Math.cos(w)) * 14;
+          p.lHandX = 24; p.lHandY = -4 + Math.sin(w * 2) * 1.5;
+          p.rHandX = 32; p.rHandY = -2 + Math.sin(t * 4.5) * 2.5;
+          p.elbowL = 1;  p.elbowR = 1;
+          p.handStyleL = 'hold_phone';
+          p.handStyleR = 'hold_phone';
+          break;
+        }
+        case 'eat_table': {
+          p.seated = true;
+          p.prop = 'table';
+          p.hipY = 44 + breath * 1.5;
+          p.torsoLean = 0.12;
+          const bite = Math.max(0, Math.sin(t * 1.6)) ** 2; // đưa thìa lên miệng theo nhịp
+          p.headTilt = 0.1 - bite * 0.06;
+          p.lHandX = 30; p.lHandY = 40 + breath;               // giữ bát
+          p.rHandX = lerp(42, 30, bite); p.rHandY = lerp(36, -22, bite);
+          p.lFootX = 36; p.lFootY = 96;
+          p.rFootX = 50; p.rFootY = 96;
+          p.kneeL = -1;  p.kneeR = -1;
+          p.elbowL = 1;  p.elbowR = 1;
+          p.handStyleR = 'fist';
+          break;
+        }
+        case 'open_door': {
+          p.prop = 'door';
+          p.torsoLean = 0.06;
+          p.headTilt = -0.02;
+          p.lHandX = -26; p.lHandY = 22 + breath * 2;
+          p.rHandX = 44; p.rHandY = 40;      // tay nắm cửa (app tự kéo theo cửa)
+          p.lFootX = -14; p.rFootX = 22;
+          p.elbowR = 1;
+          p.handStyleR = 'fist';
+          break;
+        }
+        case 'lie_bed':
+        case 'lie_alarm':
+        case 'sleep': {
+          p.lying = true;
+          p.prop = 'bed';
+          p.hipY = breath * 1.2;
+          p.torsoLean = 0;
+          p.headTilt = -0.08 + Math.sin(t * 0.9) * 0.02;
+          p.lFootX = -10; p.rFootX = 10;
+          p.lHandX = -14; p.lHandY = 44;
+          p.rHandX = 18;  p.rHandY = 46;
+          p.eyesClosed = pose === 'sleep';
+          if (pose === 'lie_alarm') {
+            // với tay qua đầu tới đồng hồ báo thức cạnh gối, ngón tay quờ quạng
+            p.reach = 1;
+            p.rHandX = 44 + Math.sin(t * 3) * 4; p.rHandY = -46 + Math.sin(t * 4.3) * 3;
+            p.elbowR = 1;
+            p.handStyleR = 'open';
+          }
+          break;
+        }
         case 'point': {
           p.hipY = breath * 2 + floatY;
           p.torsoLean = 0.08;
@@ -1355,6 +1481,13 @@
         }
         default:
           break;
+      }
+      // Chuyển động nền khi đứng yên: dồn trọng tâm chậm 5–6 giây một lần
+      if (!p.seated && !p.lying && pose !== 'walk' && pose !== 'walk_phone' && role !== 'shadow') {
+        const shift = Math.sin(t * 1.1);
+        p.torsoLean += shift * 0.018;
+        p.lFootY = Math.min(p.lFootY, 96 - Math.max(0, shift) * 1.5);
+        p.rFootY = Math.min(p.rFootY, 96 - Math.max(0, -shift) * 1.5);
       }
       return p;
     }
@@ -1551,6 +1684,19 @@
           ctx.fill();
           ctx.strokeStyle = accentGlow;
           ctx.lineWidth = lw * 0.45;
+          ctx.stroke();
+          ctx.restore();
+          return;
+        }
+
+        // Mắt nhắm hẳn (ngủ hoặc giữa lúc chớp): vẽ đường cong mí khép, không vẽ tròng trắng
+        if (blinkAmount >= 0.97) {
+          ctx.strokeStyle = outlineColor;
+          ctx.lineWidth = lw * 0.8;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(-eyeRx * 0.9, -eyeRy * 0.05);
+          ctx.quadraticCurveTo(0, eyeRy * 0.45, eyeRx * 0.9, -eyeRy * 0.05);
           ctx.stroke();
           ctx.restore();
           return;
@@ -1791,19 +1937,11 @@
       rig.rFootX = lerp(rig.rFootX, target.rFootX, smooth);
       rig.rFootY = lerp(rig.rFootY, target.rFootY, smooth);
 
-      // Cập nhật chớp mắt tự nhiên
-      rig.nextBlink -= dt;
-      if (rig.nextBlink <= 0) {
-        rig.blinkTimer = 0.16;
-        rig.nextBlink = 2.4 + Math.random() * 2.4;
-      }
-      if (rig.blinkTimer > 0) {
-        rig.blinkTimer = Math.max(0, rig.blinkTimer - dt);
-        const p = rig.blinkTimer / 0.16;
-        rig.blinkAmount = Math.sin(p * Math.PI);
-      } else {
-        rig.blinkAmount = 0;
-      }
+      // Chớp mắt tự nhiên, cố định theo thời gian (không ngẫu nhiên) để mỗi lần xuất giống nhau
+      const seed = strHash(String(charInst.id || charInst.role));
+      rig.blinkAmount = target.eyesClosed ? 1 : blinkAt(t, seed);
+      // Nhún vai nhẹ thỉnh thoảng (chuyển động nền)
+      const shrug = (!isShadow && !target.lying) ? Math.pow(Math.max(0, Math.sin(t * 0.85 + seed * 9)), 14) * 4 : 0;
 
       // Chuyển động thứ cấp (Secondary Motion) cho dây áo & chỏm tóc
       const velX = rig.lastWorldX !== null ? (worldX - rig.lastWorldX) / Math.max(dt, 0.016) : 0;
@@ -1812,25 +1950,6 @@
       rig.stringSwing = lerp(rig.stringSwing, targetSwing, 1 - Math.exp(-6 * dt));
       rig.hairBounce = lerp(rig.hairBounce, -rig.hipY * 0.03 + Math.sin(t * 4.2) * 0.06, 1 - Math.exp(-8 * dt));
 
-      // Tính hướng mắt liếc theo lookTarget
-      let targetLookX = 0.15;
-      let targetLookY = 0;
-      const lt = charInst.lookTarget || 'camera';
-      if (lt === 'phone') { targetLookX = 0.45; targetLookY = 0.65; }
-      else if (lt === 'left') { targetLookX = -0.85 * facing; targetLookY = 0; }
-      else if (lt === 'right') { targetLookX = 0.85 * facing; targetLookY = 0; }
-      else if (lt === 'up') { targetLookX = 0.1; targetLookY = -0.7; }
-      else if (lt === 'down') { targetLookX = 0.15; targetLookY = 0.65; }
-      else if (lt === 'camera') { targetLookX = 0.05; targetLookY = 0; }
-      else if (allCharPositions && allCharPositions[lt]) {
-        const other = allCharPositions[lt];
-        const dx = (other.x - worldX) * facing;
-        const dy = other.y - worldY;
-        targetLookX = clamp(dx / 240, -0.9, 0.9);
-        targetLookY = clamp(dy / 260, -0.7, 0.7);
-      }
-      rig.eyeLookX = lerp(rig.eyeLookX, targetLookX, smooth);
-      rig.eyeLookY = lerp(rig.eyeLookY, targetLookY, smooth);
 
       // Các thông số tỷ lệ cơ thể chuẩn Cel-Shaded Cartoon
       const headR = isKid ? 36 : 38;
@@ -1847,7 +1966,7 @@
       };
       const headCenter = {
         x: neckPos.x + Math.sin(rig.torsoLean + rig.headTilt) * (headR * 0.98),
-        y: neckPos.y - Math.cos(rig.torsoLean + rig.headTilt) * (headR * 0.98),
+        y: neckPos.y - Math.cos(rig.torsoLean + rig.headTilt) * (headR * 0.98) - shrug * 0.6,
       };
 
       const upperArm = isKid ? 24 : 33;
@@ -1855,8 +1974,18 @@
       const upperLeg = isKid ? 38 : 49;
       const lowerLeg = isKid ? 38 : 49;
 
-      const lShoulder = { x: shoulderPos.x - 16, y: shoulderPos.y + 6 };
-      const rShoulder = { x: shoulderPos.x + 16, y: shoulderPos.y + 6 };
+      const lShoulder = { x: shoulderPos.x - 16, y: shoulderPos.y + 6 - shrug };
+      const rShoulder = { x: shoulderPos.x + 16, y: shoulderPos.y + 6 - shrug };
+
+      // Cửa mở dần: tay phải bám theo tay nắm cửa
+      const doorAt = charInst.doorAt != null ? Number(charInst.doorAt) : 0.4;
+      const doorOpen = target.prop === 'door' ? easeInOutCubic(clamp(((charInst._lt || 0) - doorAt) / 1.3, 0, 1)) : 0;
+      const doorHinge = 102, doorW = 58, doorAngle = doorOpen * 1.25;
+      const handleX = doorHinge - doorW * Math.cos(doorAngle) + 8 * Math.cos(doorAngle);
+      if (target.prop === 'door') {
+        rig.rHandX = handleX - shoulderPos.x;
+        rig.rHandY = -118 - shoulderPos.y;
+      }
       const lHip = { x: hipPos.x - 11, y: hipPos.y + 4 };
       const rHip = { x: hipPos.x + 11, y: hipPos.y + 4 };
 
@@ -1865,6 +1994,37 @@
       const rArmIK = solveIK2Bone(rShoulder.x, rShoulder.y, shoulderPos.x + rig.rHandX, shoulderPos.y + rig.rHandY, upperArm, lowerArm, target.elbowR);
       const lLegIK = solveIK2Bone(lHip.x, lHip.y, rig.lFootX, rig.lFootY - 96, upperLeg, lowerLeg, target.kneeL);
       const rLegIK = solveIK2Bone(rHip.x, rHip.y, rig.rFootX, rig.rFootY - 96, upperLeg, lowerLeg, target.kneeR);
+
+      // Hướng mắt liếc đúng mục tiêu: điện thoại trên tay, laptop, đồ vật trong bối cảnh, nhân vật khác
+      let targetLookX = 0.15, targetLookY = 0;
+      const lt = charInst.lookTarget || (target.holdingPhone ? 'phone' : target.prop === 'laptop' ? 'laptop' : target.prop === 'table' ? 'down' : target.prop === 'door' ? 'door' : 'camera');
+      const lookAtLocal = (tx, ty) => {
+        targetLookX = clamp((tx - headCenter.x) / 110, -0.9, 0.9);
+        targetLookY = clamp((ty - headCenter.y) / 110, -0.75, 0.75);
+      };
+      const toLocal = (wx, wy) => [((wx - worldX) / scale) * facing, (wy - worldY) / scale];
+      if (lt === 'phone') lookAtLocal(rArmIK.ex + 4, rArmIK.ey - 8);
+      else if (lt === 'laptop') lookAtLocal(80, -128);
+      else if (lt === 'door' && target.prop === 'door') lookAtLocal(handleX, -150);
+      else if (lt === 'left') { targetLookX = -0.85 * facing; }
+      else if (lt === 'right') { targetLookX = 0.85 * facing; }
+      else if (lt === 'up') { targetLookX = 0.1; targetLookY = -0.7; }
+      else if (lt === 'down') { targetLookX = 0.15; targetLookY = 0.65; }
+      else if (lt === 'camera') { targetLookX = 0.05; targetLookY = 0; }
+      else if (allCharPositions && allCharPositions[lt]) {
+        const o = allCharPositions[lt];
+        const [lx, ly] = toLocal(o.x, o.y);
+        lookAtLocal(lx, ly);
+      } else if (allCharPositions && allCharPositions['@' + lt]) {
+        const o = allCharPositions['@' + lt];
+        const [lx, ly] = toLocal(o.x, o.y);
+        lookAtLocal(lx, ly);
+      } else if (lt === 'clock' || lt === 'window') { targetLookX = 0.6; targetLookY = -0.55; }
+      if (target.lying) { targetLookX = target.reach ? -0.2 : 0.05; targetLookY = target.reach ? -0.6 : -0.1; }
+      rig.eyeLookX = lerp(rig.eyeLookX, targetLookX, smooth);
+      rig.eyeLookY = lerp(rig.eyeLookY, targetLookY, smooth);
+      // Đầu hơi cúi/ngẩng theo hướng nhìn
+      const headLook = clamp(targetLookY * 0.12, -0.08, 0.1);
 
       ctx.save();
       ctx.translate(worldX, worldY);
@@ -1878,22 +2038,116 @@
       ctx.fill();
       ctx.restore();
 
-      // ---- VẼ LỚP SAU (TAY TRÁI & CHÂN TRÁI) ----
-      const limbThick = isKid ? 7.5 : 8.5;
-      if (!isShadow) {
-        // Chân trái
-        drawCurvedLimb(ctx, lHip.x, lHip.y, lLegIK.jx, lLegIK.jy, lLegIK.ex, lLegIK.ey, limbThick, outlineColor);
-        const shoeColor = isKid ? '#E2E8F0' : (isSide && preset === 'woman' ? '#334155' : '#111318');
-        drawCartoonShoe(ctx, lLegIK.ex, lLegIK.ey, 1, shoeColor, outlineColor, lw);
+      // ---- ĐẠO CỤ PHÍA SAU: ghế / mép giường / cửa / giường nằm ----
+      const propLine = '#111318';
+      const olw = lw * 0.8;
+      if (target.prop === 'door') {
+        ctx.save();
+        ctx.lineWidth = olw; ctx.strokeStyle = propLine; ctx.lineJoin = 'round';
+        // khung cửa
+        ctx.fillStyle = '#1b1f29';
+        ctx.fillRect(doorHinge - doorW - 8, -276, doorW + 16, 276);
+        ctx.strokeRect(doorHinge - doorW - 8, -276, doorW + 16, 276);
+        // ánh sáng ấm lọt qua khe cửa đang mở
+        if (doorOpen > 0.02) {
+          const g = ctx.createLinearGradient(doorHinge - doorW, 0, doorHinge, 0);
+          g.addColorStop(0, `rgba(255, 205, 130, ${0.75 * doorOpen})`);
+          g.addColorStop(1, `rgba(255, 170, 90, ${0.35 * doorOpen})`);
+          ctx.fillStyle = g;
+          ctx.fillRect(doorHinge - doorW, -268, doorW, 268);
+        } else {
+          ctx.fillStyle = '#0b0d13';
+          ctx.fillRect(doorHinge - doorW, -268, doorW, 268);
+        }
+        // cánh cửa xoay quanh bản lề (nhìn nghiêng)
+        const pw = doorW * Math.cos(doorAngle);
+        ctx.fillStyle = '#3a3f4c';
+        ctx.beginPath();
+        ctx.moveTo(doorHinge, -268); ctx.lineTo(doorHinge - pw, -268 - Math.sin(doorAngle) * 10);
+        ctx.lineTo(doorHinge - pw, 0); ctx.lineTo(doorHinge, 0); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#c9ccd4';
+        ctx.beginPath(); ctx.arc(handleX, -118, 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
+      if (target.seated && charInst.seat !== 'none') {
+        ctx.save();
+        ctx.lineWidth = olw; ctx.strokeStyle = propLine; ctx.lineJoin = 'round';
+        const seatY = hipPos.y + 12;
+        if (charInst.seat === 'bed') {
+          ctx.fillStyle = '#2c3650';
+          ctx.beginPath(); ctx.roundRect(-70, seatY, 110, -seatY, 8); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#3d4a6a';
+          ctx.beginPath(); ctx.roundRect(-74, seatY - 6, 118, 16, 6); ctx.fill(); ctx.stroke();
+        } else {
+          ctx.fillStyle = '#2a2e38';
+          ctx.beginPath(); ctx.roundRect(-30, seatY - 64, 9, 66, 4); ctx.fill(); ctx.stroke();   // tựa lưng
+          ctx.beginPath(); ctx.roundRect(-30, seatY, 58, 9, 4); ctx.fill(); ctx.stroke();        // mặt ghế
+          ctx.beginPath(); ctx.roundRect(-26, seatY + 9, 6, -seatY - 9, 3); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.roundRect(18, seatY + 9, 6, -seatY - 9, 3); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      let lyingSaved = false;
+      if (target.lying) {
+        ctx.save();
+        ctx.lineWidth = olw; ctx.strokeStyle = propLine; ctx.lineJoin = 'round';
+        // đầu giường + kệ nhỏ đặt đồng hồ báo thức ngay trên gối (với tay tới được)
+        ctx.fillStyle = '#232835';
+        ctx.beginPath(); ctx.roundRect(-172, -150, 16, 150, 5); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(-160, -112, 86, 7, 3); ctx.fill(); ctx.stroke();
+        const ringing = target.reach && Math.sin(t * 40) > 0;
+        ctx.save();
+        ctx.translate(-118 + (target.reach ? Math.sin(t * 60) * 1.5 : 0), -125);
+        ctx.fillStyle = '#16181f';
+        ctx.beginPath(); ctx.roundRect(-20, -16, 40, 26, 6); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = ACCENT_PALETTES[state.accent]?.primary || '#FF3B30';
+        ctx.font = '700 12px "JetBrains Mono", monospace';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(charInst._clockTime || '6:00'), 0, -3);
+        if (ringing) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(0, -3, 30, -0.5, 0.5); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, -3, 30, Math.PI - 0.5, Math.PI + 0.5); ctx.stroke();
+        }
+        ctx.restore();
+        // giường
+        ctx.fillStyle = '#20263a';
+        ctx.beginPath(); ctx.roundRect(-165, -62, 330, 62, 8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#2f3a57';
+        ctx.beginPath(); ctx.roundRect(-160, -70, 322, 16, 8); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#e8e4da';
+        ctx.beginPath(); ctx.ellipse(-122, -78, 40, 15, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        // xoay cả nhân vật nằm ngửa, đầu trên gối
+        ctx.save();
+        lyingSaved = true;
+        ctx.translate(96, -76);
+        ctx.rotate(-Math.PI / 2);
+      }
 
-        // Chân phải
-        drawCurvedLimb(ctx, rHip.x, rHip.y, rLegIK.jx, rLegIK.jy, rLegIK.ex, rLegIK.ey, limbThick, outlineColor);
+      // ---- VẼ LỚP SAU (CHÂN & TAY TRÁI) ----
+      const armW0 = isKid ? 10 : 12.5, armW1 = isKid ? 8 : 9;
+      const legW0 = isKid ? 12 : 14.5, legW1 = isKid ? 9 : 10.5;
+      const sleeveColor = isShadow ? '#0B0D14'
+        : charInst.role === 'hero' ? outfitColor
+        : preset === 'pilot' ? '#F8FAFC'
+        : preset === 'woman' || preset === 'kid' ? skinColor
+        : (outfitColor === '#4B5563' ? '#2563EB' : outfitColor);
+      const pantsColor = charInst.role === 'hero' ? (roleCfg.pantsColor || '#24272F')
+        : preset === 'kid' ? skinColor : preset === 'woman' ? skinColor : '#1f2430';
+      const limbOutline = isShadow ? rgbaHex(outfitColor, 0.6) : outlineColor;
+      const shadowGlow = isShadow ? outfitColor : null;
+      if (!isShadow) {
+        const shoeColor = isKid ? '#E2E8F0' : (isSide && preset === 'woman' ? '#334155' : '#111318');
+        drawLimb(ctx, lHip.x, lHip.y, lLegIK.jx, lLegIK.jy, lLegIK.ex, lLegIK.ey, legW0, legW1, shadeHex(pantsColor, -0.12), outlineColor, olw);
+        drawCartoonShoe(ctx, lLegIK.ex, lLegIK.ey, 1, shoeColor, outlineColor, lw);
+        drawLimb(ctx, rHip.x, rHip.y, rLegIK.jx, rLegIK.jy, rLegIK.ex, rLegIK.ey, legW0, legW1, pantsColor, outlineColor, olw);
         drawCartoonShoe(ctx, rLegIK.ex, rLegIK.ey, 1, shoeColor, outlineColor, lw);
       }
 
-      // Tay trái (phía sau thân)
-      const backArmColor = isShadow ? '#0B0D14' : outlineColor;
-      drawCurvedLimb(ctx, lShoulder.x, lShoulder.y, lArmIK.jx, lArmIK.jy, lArmIK.ex, lArmIK.ey, limbThick * 0.92, backArmColor);
+      // Tay trái (phía sau thân, tối hơn một bậc)
+      drawLimb(ctx, lShoulder.x, lShoulder.y, lArmIK.jx, lArmIK.jy, lArmIK.ex, lArmIK.ey, armW0 * 0.95, armW1 * 0.95, isShadow ? sleeveColor : shadeHex(sleeveColor, -0.16), limbOutline, olw, shadowGlow);
       const lHandAngle = Math.atan2(lArmIK.ey - lArmIK.jy, lArmIK.ex - lArmIK.jx);
       drawCartoonHand(ctx, lArmIK.ex, lArmIK.ey, lHandAngle, target.handStyleL, isShadow ? '#121521' : skinColor, outlineColor, lw);
 
@@ -1905,10 +2159,11 @@
       if (isShadow) {
         // Bóng đen: cơ thể khói lơ lửng uốn lượn liên tục
         ctx.save();
+        const flick = 0.75 + 0.25 * Math.sin(t * 11.3) * Math.sin(t * 4.7 + 1.3);
         ctx.shadowColor = outfitColor;
-        ctx.shadowBlur = 22;
+        ctx.shadowBlur = 16 + 12 * flick;
         ctx.fillStyle = '#0A0C13';
-        ctx.strokeStyle = rgbaHex(outfitColor, 0.55);
+        ctx.strokeStyle = rgbaHex(outfitColor, 0.35 + 0.35 * flick);
         ctx.lineWidth = 2.2;
         ctx.beginPath();
         ctx.moveTo(-24, -torsoLen + 4);
@@ -1957,8 +2212,8 @@
         ctx.beginPath();
         ctx.rect(lightDirX > 0 ? -wBot - 8 : 4, -torsoLen - 10, wBot + 4, torsoLen + 30);
         ctx.fill();
-        // Ánh sáng xanh từ điện thoại lên ngực áo
-        if (target.holdingPhone) {
+        // Ánh sáng xanh từ điện thoại / laptop lên ngực áo
+        if (target.holdingPhone || target.screenGlow) {
           const g = ctx.createRadialGradient(22, -torsoLen * 0.65, 2, 16, -torsoLen * 0.65, 42);
           g.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
           g.addColorStop(1, 'rgba(56, 189, 248, 0)');
@@ -2121,7 +2376,7 @@
       // ---- VẼ ĐẦU & KHUÔN MẶT ----
       ctx.save();
       ctx.translate(headCenter.x, headCenter.y);
-      ctx.rotate(rig.torsoLean * 0.55 + rig.headTilt);
+      ctx.rotate(rig.torsoLean * 0.55 + rig.headTilt + headLook + (target.lying ? Math.PI / 2 * 0.88 : 0));
 
       // Tai nhỏ cho vai phụ (Cơ trưởng, Quý cô, Bạn thân)
       if (isSide && preset !== 'kid') {
@@ -2148,9 +2403,49 @@
         outlineColor,
         lw,
         lightDirX: lightDirX * facing,
-        phoneGlow: target.holdingPhone ? 1 : 0,
+        phoneGlow: (target.holdingPhone || target.screenGlow) ? 1 : 0,
         bloodshot: !!charInst.bloodshot,
       });
+
+      // Ánh viền (rim light) mảnh ở phía có đèn
+      if (!isShadow) {
+        const side = lightDirX * facing > 0 ? 1 : -1;
+        ctx.save();
+        ctx.strokeStyle = charInst._rimColor || 'rgba(255, 238, 214, 0.55)';
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        const c = side > 0 ? -Math.PI / 4 : -Math.PI * 3 / 4;
+        ctx.arc(0, 0, headR - 3.5, c - 0.55, c + 0.55);
+        ctx.stroke();
+        ctx.restore();
+        // Ánh xanh màn hình hắt lên mặt
+        if (target.holdingPhone || target.screenGlow) {
+          const g = ctx.createRadialGradient(headR * 0.6, headR * 0.6, 2, headR * 0.3, headR * 0.3, headR * 1.3);
+          g.addColorStop(0, 'rgba(120, 190, 255, 0.32)');
+          g.addColorStop(1, 'rgba(120, 190, 255, 0)');
+          ctx.save();
+          ctx.beginPath(); ctx.arc(0, 0, headR - 1, 0, Math.PI * 2); ctx.clip();
+          ctx.fillStyle = g;
+          ctx.fillRect(-headR, -headR, headR * 2, headR * 2);
+          ctx.restore();
+        }
+      } else {
+        // Khói bốc lên từ đỉnh đầu Bóng đen
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 4; i++) {
+          const st = (t * 0.4 + i * 0.25) % 1;
+          const px = Math.sin(t * 1.7 + i * 1.9) * 12 * (1 - st) + (i - 1.5) * 7;
+          const py = -headR * 0.8 - st * 55;
+          const g = ctx.createRadialGradient(px, py, 0, px, py, 10 + st * 12);
+          g.addColorStop(0, rgbaHex(outfitColor, (1 - st) * 0.22));
+          g.addColorStop(1, rgbaHex(outfitColor, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(px, py, 10 + st * 12, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      }
 
       // ---- VẼ TÓC / MŨ PHÍA TRƯỚC ĐẦU ----
       if (charInst.role === 'hero') {
@@ -2272,12 +2567,80 @@
         ctx.restore();
       }
 
-      // ---- VẼ LỚP TRƯỚC (TAY PHẢI) ----
-      const frontArmColor = isShadow ? '#10131F' : outlineColor;
-      drawCurvedLimb(ctx, rShoulder.x, rShoulder.y, rArmIK.jx, rArmIK.jy, rArmIK.ex, rArmIK.ey, limbThick * 0.95, frontArmColor);
-      const rHandAngle = Math.atan2(rArmIK.ey - rArmIK.jy, rArmIK.ex - rArmIK.jx);
-      drawCartoonHand(ctx, rArmIK.ex, rArmIK.ey, rHandAngle, target.handStyleR, isShadow ? '#161A29' : skinColor, outlineColor, lw);
+      // ---- ĐẠO CỤ PHÍA TRƯỚC: bàn + laptop / bát ăn, chăn đắp ----
+      if (target.prop === 'laptop' || target.prop === 'table') {
+        ctx.save();
+        ctx.lineWidth = olw; ctx.strokeStyle = propLine; ctx.lineJoin = 'round';
+        const topY = -100;
+        ctx.fillStyle = '#5b4636';
+        ctx.beginPath(); ctx.roundRect(20, topY, 120, 9, 3); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#4a382b';
+        ctx.beginPath(); ctx.roundRect(30, topY + 9, 7, -topY - 9, 3); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(124, topY + 9, 7, -topY - 9, 3); ctx.fill(); ctx.stroke();
+        if (target.prop === 'laptop') {
+          const sg = ctx.createRadialGradient(70, -128, 2, 60, -128, 70);
+          sg.addColorStop(0, 'rgba(140, 200, 255, 0.45)');
+          sg.addColorStop(1, 'rgba(140, 200, 255, 0)');
+          ctx.fillStyle = sg;
+          ctx.beginPath(); ctx.arc(66, -126, 70, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#2d313b';
+          ctx.beginPath(); ctx.roundRect(34, topY - 5, 56, 5, 2); ctx.fill(); ctx.stroke();
+          ctx.save();
+          ctx.translate(88, topY - 3);
+          ctx.rotate(-0.32);
+          ctx.fillStyle = '#2d313b';
+          ctx.beginPath(); ctx.roundRect(-5, -48, 7, 50, 3); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = '#bfe3ff';
+          ctx.fillRect(-6.5, -45, 2.5, 42);
+          ctx.restore();
+        } else {
+          // bát + hơi nóng
+          ctx.fillStyle = '#e8e4da';
+          ctx.beginPath(); ctx.moveTo(42, topY); ctx.quadraticCurveTo(58, topY + 2, 74, topY);
+          ctx.quadraticCurveTo(72, topY - 16, 58, topY - 16); ctx.quadraticCurveTo(44, topY - 16, 42, topY); ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          ctx.strokeStyle = 'rgba(230,232,240,0.35)'; ctx.lineWidth = 2;
+          for (let i = 0; i < 2; i++) {
+            const sy = topY - 22 - ((t * 14 + i * 9) % 18);
+            ctx.beginPath(); ctx.moveTo(52 + i * 10, sy + 8); ctx.quadraticCurveTo(48 + i * 10 + Math.sin(t * 3 + i) * 4, sy, 54 + i * 10, sy - 8); ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+      if (target.lying) {
+        // chăn đắp từ ngực xuống chân, phập phồng theo nhịp thở
+        ctx.save();
+        ctx.lineWidth = olw; ctx.strokeStyle = propLine; ctx.lineJoin = 'round';
+        const br = Math.sin(t * 2.6) * 1.5;
+        ctx.fillStyle = '#3b4d7a';
+        ctx.beginPath();
+        ctx.moveTo(-40 - br, -150);
+        ctx.quadraticCurveTo(0, -158, 42 + br, -150);
+        ctx.quadraticCurveTo(48, -60, 40, 14);
+        ctx.lineTo(-38, 14);
+        ctx.quadraticCurveTo(-46, -60, -40 - br, -150);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#e8e4da';
+        ctx.beginPath(); ctx.roundRect(-42 - br, -156, 84 + br * 2, 14, 7); ctx.fill(); ctx.stroke();
+        ctx.restore();
+      }
 
+      // ---- VẼ LỚP TRƯỚC (TAY PHẢI) ----
+      const rHandAngle = Math.atan2(rArmIK.ey - rArmIK.jy, rArmIK.ex - rArmIK.jx);
+      if (!(target.lying && !target.reach)) {
+        drawLimb(ctx, rShoulder.x, rShoulder.y, rArmIK.jx, rArmIK.jy, rArmIK.ex, rArmIK.ey, armW0, armW1, sleeveColor, limbOutline, olw, shadowGlow);
+        drawCartoonHand(ctx, rArmIK.ex, rArmIK.ey, rHandAngle, target.handStyleR, isShadow ? '#161A29' : skinColor, outlineColor, lw);
+      }
+      if (target.prop === 'table') {
+        // thìa trong tay
+        ctx.save();
+        ctx.strokeStyle = '#c9ccd4'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(rArmIK.ex, rArmIK.ey); ctx.lineTo(rArmIK.ex + Math.cos(rHandAngle) * 16, rArmIK.ey + Math.sin(rHandAngle) * 16); ctx.stroke();
+        ctx.restore();
+      }
+
+      if (lyingSaved) ctx.restore();
       ctx.restore();
     }
 
@@ -4004,6 +4367,7 @@
       punch: 'determined', lift: 'cheer', sit: 'sit_slumped', sitphone: 'sit_phone', sitdesk: 'work_desk', sitsad: 'sit_slumped',
       knees: 'sit_slumped', kneel: 'sit_slumped', crouch: 'sit_slumped', climb: 'walk', open: 'wave', umbrella: 'idle', carry: 'idle',
       walk: 'walk', run: 'walk',
+      lie_bed: 'lie_bed', lie_alarm: 'lie_alarm', sleep: 'sleep',
     };
     const OLD_FACE = {
       neutral: 'neutral', tired: 'tired', sleepy: 'tired', sleep: 'tired', sad: 'sad', cry: 'sad', worried: 'anxious', scared: 'anxious',
@@ -4056,6 +4420,7 @@
         lookTarget: a.hold === 'phone' ? 'phone' : (role === 'shadow' ? heroId : 'camera'),
       };
       if (who === 'ghost') c.ghost = true;
+      if (a.x === 'bed.sit') c.seat = 'bed';
       if (mv) {
         c.moveToX = mv.to != null ? oldX(mv.to, x) : x;
         c.moveAt = Number(mv.at) || 0;
@@ -4112,7 +4477,10 @@
           if (setArgs.clock) sc.clockTime = String(setArgs.clock);
           if (setArgs.spot != null) sc.spot = setArgs.spot;
           if (a.bed) {
-            sc.characters.push(convertOldActor({ who: a.bed.who || 'hoodie', x: 'bed.sit', pose: 'sitsad', face: a.bed.face === 'sleep' ? 'tired' : a.bed.face, faceAt: a.bed.faceAt }, 99, heroId));
+            const bedPose = a.bed.arm ? 'lie_alarm' : (a.bed.face === 'sleep' ? 'sleep' : 'lie_bed');
+            const lyer = convertOldActor({ who: a.bed.who || 'hoodie', x: 0.5, pose: bedPose, face: a.bed.face === 'sleep' ? 'tired' : a.bed.face, faceAt: a.bed.faceAt }, 99, heroId);
+            lyer.y = 0.86;
+            sc.characters.push(lyer);
             if (a.bed.zzz) sc.fx = (sc.fx || []).concat([{ kind: 'zzz', x: 0.46, y: 0.5 }]);
           }
           actors.forEach((ac, k) => sc.characters.push(convertOldActor(ac, k, heroId)));
@@ -4381,16 +4749,25 @@
         if (c.out != null) alpha = Math.min(alpha, clamp((Number(c.out) - localTime) / fd, 0, 1));
         const roleCfg = state.characters[c.role] || state.characters.hero;
         const k = baseScale * (c.scale || 1) * (roleCfg.scale || 1);
-        const seated = ['sit_slumped', 'sit_phone', 'work_desk'].includes(pose);
-        const headTopW = curY - (seated ? 205 : 250) * k;
-        const headYW = curY - (seated ? 165 : 210) * k;
+        const seated = ['sit_slumped', 'sit_phone', 'work_desk', 'type_laptop', 'eat_table'].includes(pose);
+        const lying = ['lie_bed', 'lie_alarm', 'sleep'].includes(pose);
+        const headTopW = curY - (lying ? 120 : seated ? 205 : 250) * k;
+        const headYW = curY - (lying ? 80 : seated ? 165 : 210) * k;
         charPositions[key] = { x: curX, y: headYW };
-        return { ...c, pose, expression, id: key, worldX: curX, worldY: curY, _alpha: alpha, _rigKey: scene.id + '|' + key, _headTopW: headTopW, _headYW: headYW };
+        return {
+          ...c, pose, expression, id: key, worldX: curX, worldY: curY, _alpha: alpha,
+          _rigKey: scene.id + '|' + key, _headTopW: headTopW, _headYW: headYW,
+          _lt: localTime, _clockTime: c.clockTime || scene.clockTime,
+          _rimColor: scene.light && scene.light.color ? rgbaHex(scene.light.color, 0.6) : null,
+        };
       });
+      // Toạ độ đồ vật trong bối cảnh (đồng hồ, cửa sổ, cửa…) để mắt liếc đúng chỗ
+      const anchors = Object.assign({}, ENV_ANCHORS[scene.environment] || {}, scene.anchors || {});
+      Object.entries(anchors).forEach(([k2, v]) => { if (Array.isArray(v)) charPositions['@' + k2] = { x: v[0] * w, y: v[1] * h }; });
 
       // Sắp xếp theo trục Y để nhân vật đứng sau vẽ trước (chiều sâu tự nhiên)
       computedChars.sort((a, b) => a.worldY - b.worldY);
-      const lightDirX = scene.environment === 'bedroom_night' ? -1 : 1;
+      const lightDirX = scene.light && scene.light.x != null ? (Number(scene.light.x) < 0.5 ? -1 : 1) : (scene.environment === 'bedroom_night' ? -1 : 1);
 
       computedChars.forEach(c => {
         if (c._alpha <= 0.01) return;
@@ -4515,7 +4892,8 @@ BỐI CẢNH (environment): bedroom_night, city_rain, sunrise_breakthrough, mini
   calendar_closeup ("calendar": {"month":"NOV","from":0,"to":12,"at":0.3,"dur":3,"mode":"x"|"fill","reset":{"at":3.6}}),
   note_closeup ("note": {"text":"day 1.\\nno phone before noon.","at":0.3,"cps":9}), cta (nút LIKE/SUBSCRIBE có con trỏ bấm).
 NHÂN VẬT: role "hero" (đầu tròn kem, hoodie xám), "shadow" (bóng đen cám dỗ), "side" + "preset": "friend"|"woman"|"kid"|"pilot".
-  pose: idle, walk, phone, sit_phone, sit_slumped, work_desk, whisper, shocked, headhold, determined, cheer, wave, point.
+  pose: idle, walk, walk_phone, phone, sit_phone, sit_slumped, type_laptop (có bàn + laptop), eat_table (có bàn + bát), open_door (cửa mở dần, "doorAt"), lie_bed, lie_alarm (nằm với tay tắt báo thức), sleep, whisper, shocked, headhold, determined, cheer, wave, point. Ngồi: "seat": "chair" (mặc định) | "bed" | "none".
+  lookTarget: phone, laptop, door, clock, window, camera, up, down, left, right hoặc id nhân vật.
   expression: neutral, tired, anxious, sad, shocked, angry, determined, confident, smirk. "bloodshot": true = mắt đỏ gân máu.
   Thời gian trong cảnh (giây): "at" (hiện), "out" (biến mất), "fade"; "poseAt": [[2,"cheer"]]; "expressionAt": [[1.5,"shocked"]]; đi bộ: "moveToX": 0.7, "moveAt": 0.5, "moveDur": 3, "poseAfterMove": "idle".
   Cận mặt: "x": 0.5, "y": 1.35, "scale": 2.5. Đứng trên sàn: y 0.84–0.88. Ngồi: y 0.88.
