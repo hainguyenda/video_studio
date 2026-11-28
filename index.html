@@ -560,7 +560,7 @@
   <script>
     /* =========================================================================
        VIDEO STUDIO 2.0 — CEL-SHADED 2-BONE IK ANIMATION ENGINE
-       Kiến trúc 100% Pure Canvas 2D + Procedural Web Audio API + MediaRecorder
+       Kiến trúc 100% Pure Canvas 2D + Procedural Web Audio API + WebCodecs MP4
        ========================================================================= */
 
     // ---------- 1. TIỆN ÍCH CHUNG & THÔNG BÁO TOAST ----------
@@ -3200,6 +3200,36 @@
         }
       }
 
+      now() { return this.offT != null ? this.offT : this.ctx.currentTime; }
+
+      // Dựng toàn bộ âm thanh (nhạc + sfx) ngoại tuyến, nhanh, không phụ thuộc tab đang mở hay không
+      async renderOffline(duration, onProg) {
+        const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!OAC) return null;
+        const sr = 44100;
+        const saved = { ctx: this.ctx, masterGain: this.masterGain, musicBus: this.musicBus, reverb: this.reverb, revGain: this.revGain, noiseBuf: this.noiseBuf, lastStep: this.lastStep, lastTickSec: this.lastTickSec, initialized: this.initialized, _mv: this._mv };
+        const oc = new OAC(2, Math.ceil((duration + 0.5) * sr), sr);
+        try {
+          this.ctx = oc; this.initialized = true; this.offline = true;
+          this.masterGain = oc.createGain(); this.masterGain.gain.value = 0.28; this.masterGain.connect(oc.destination);
+          this.musicBus = null; this._mv = undefined; this.lastStep = -1; this.lastTickSec = -1; this.resetSfx();
+          const step = 1 / 60; let lastId = null, n = 0;
+          for (let t = 0; t <= duration; t += step) {
+            this.offT = t;
+            const info = getSceneAtTime(Math.min(t, duration - 0.0005));
+            if (!info) continue;
+            if (info.scene.id !== lastId) { if (lastId !== null && state.script.autoWhoosh !== false) this.playWhoosh(); lastId = info.scene.id; }
+            this.tick(info.scene, t);
+            this.fireSfx(info.scene, info.localTime);
+            if (++n % 600 === 0 && onProg) { onProg(t / duration); await new Promise(r => { const mc = new MessageChannel(); mc.port1.onmessage = () => r(); mc.port2.postMessage(0); }); }
+          }
+        } finally {
+          this.offT = null; this.offline = false;
+          Object.assign(this, saved);
+        }
+        return await oc.startRendering();
+      }
+
       getAudioStream() {
         this.init();
         return this.destNode ? this.destNode.stream : null;
@@ -3207,7 +3237,7 @@
 
       playNote(freq, duration, type = 'sine', vol = 0.14) {
         if (!this.initialized || !state.audioEnabled) return;
-        const now = this.ctx.currentTime;
+        const now = this.now();
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
@@ -3233,7 +3263,7 @@
       // Âm thanh chuyển cảnh Whoosh nhẹ
       playWhoosh() {
         if (!this.initialized || !state.audioEnabled) return;
-        const now = this.ctx.currentTime;
+        const now = this.now();
         const bufSize = this.ctx.sampleRate * 0.35;
         const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
         const data = buf.getChannelData(0);
@@ -3269,7 +3299,7 @@
       resetSfx() { this.sfxScene = null; this.sfxLT = -1; }
 
       fireSfx(scene, lt) {
-        if (!this.initialized || !state.audioEnabled || !state.playing) { this.sfxScene = scene.id; this.sfxLT = lt; return; }
+        if (!this.initialized || !state.audioEnabled || (!state.playing && !this.offline)) { this.sfxScene = scene.id; this.sfxLT = lt; return; }
         const list = Array.isArray(scene.sfx) ? scene.sfx : [];
         let prev = this.sfxLT;
         if (this.sfxScene !== scene.id) prev = lt < 0.35 ? -0.001 : lt;
@@ -3323,7 +3353,7 @@
       playSfx(name, gainDb) {
         if (!this.initialized || !state.audioEnabled || !name) return;
         const v = 0.5 * Math.pow(10, ((gainDb != null ? gainDb : -8) + 8) / 20);
-        const t0 = this.ctx.currentTime + 0.01;
+        const t0 = this.now() + 0.01;
         const n = String(name);
         if (n.startsWith('whoosh')) this._burst(t0, n === 'whoosh_long' ? 0.8 : n === 'whoosh_tiny' ? 0.18 : 0.35, 0.35 * v, 'bandpass', n === 'whoosh_reverse' ? 1600 : 250, n === 'whoosh_reverse' ? 200 : 1800);
         else if (['impact_heavy', 'boom_deep', 'sting_low', 'downer', 'impact_light', 'impact_punch', 'punch_bag', 'thud_soft', 'flash_hit'].includes(n)) {
@@ -3369,7 +3399,7 @@
 
       // Gọi mỗi khung hình khi đang phát để tạo giai điệu ambient theo tâm trạng cảnh
       tick(scene, globalTime) {
-        if (!this.initialized || !state.audioEnabled || !state.playing) return;
+        if (!this.initialized || !state.audioEnabled || (!state.playing && !this.offline)) return;
         const mood = scene._mood || scene.mood || 'night';
         if (mood === 'silent') return;
 
@@ -3453,14 +3483,14 @@
       musicStep(mood, globalTime) {
         this.ensureMusicBus();
         const mv = (state.script && state.script.musicVolume != null) ? state.script.musicVolume : 1;
-        if (this._mv !== mv) { this._mv = mv; this.musicBus.gain.setTargetAtTime(2.6 * mv, this.ctx.currentTime, 0.1); }
+        if (this._mv !== mv) { this._mv = mv; this.musicBus.gain.setTargetAtTime(2.6 * mv, this.now(), 0.1); }
         const M = ProceduralAudioEngine.MOODS[mood] || ProceduralAudioEngine.MOODS.night;
         const stepDur = 60 / M.bpm / 2;              // nốt móc đơn
         const step = Math.floor(globalTime / stepDur);
         if (step === this.lastStep) return;
         // tua/nhảy thời gian: không phát dồn
         if (step < this.lastStep || step - this.lastStep > 4) this.lastStep = step - 1;
-        const when = this.ctx.currentTime + 0.03;
+        const when = this.now() + 0.03;
         for (let st = this.lastStep + 1; st <= step; st++) this.playStep(M, st, when, stepDur);
         this.lastStep = step;
       }
@@ -5145,11 +5175,6 @@ Hãy phối màu theo phong cách: [Điền phong cách màu sắc bạn muốn]
           <div class="text-[10px] font-bold truncate">${idx + 1}. ${escHtml(sc.label || sc.environment)}</div>
           <div class="text-[9px] opacity-75 font-mono">${dur.toFixed(1)}s</div>
         `;
-        blk.addEventListener('click', (e) => {
-          e.stopPropagation();
-          setViewMode('script');
-          state.currentTime = startT + 0.02;
-        });
         track.appendChild(blk);
       });
 
@@ -5169,8 +5194,12 @@ Hãy phối màu theo phong cách: [Điền phong cách màu sắc bạn muốn]
       const seek = (clientX) => {
         const rect = track.getBoundingClientRect();
         const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+        if (state.isExporting) return;
         setViewMode('script');
         state.currentTime = ratio * state.totalDuration;
+        // Tua: đặt ngay tư thế đúng của khung hình mới (không trôi từ tư thế cũ) & không phát dồn âm thanh
+        rigMemory.clear();
+        audioEngine.resetSfx();
       };
 
       track.addEventListener('mousedown', (e) => {
@@ -5215,7 +5244,205 @@ Hãy phối màu theo phong cách: [Điền phong cách màu sắc bạn muốn]
 
     // ---------- 15. XUẤT VIDEO (MEDIARECORDER) ----------
 
+    // ---------- 15a. XUẤT NHANH (WebCodecs + ghép MP4, chạy được khi chuyển tab, có %) ----------
+    const _cat = parts => { let n = 0; parts.forEach(p => n += p.length); const o = new Uint8Array(n); let k = 0; parts.forEach(p => { o.set(p, k); k += p.length; }); return o; };
+    const _be = (bytes, ...v) => { const o = new Uint8Array(v.length * bytes), d = new DataView(o.buffer); v.forEach((x, i) => bytes === 4 ? d.setUint32(i * 4, x >>> 0) : d.setUint16(i * 2, x)); return o; };
+    const _u32 = (...v) => _be(4, ...v), _u16 = (...v) => _be(2, ...v), _zeros = n => new Uint8Array(n);
+    const _str = s2 => Uint8Array.from([...s2].map(c => c.charCodeAt(0)));
+    const _box = (type, ...p) => { const b = _cat(p); return _cat([_u32(b.length + 8), _str(type), b]); };
+    const _fbox = (type, ver, flags, ...p) => _box(type, _u32((ver << 24) | flags), ...p);
+    const _list32 = arr => { const o = new Uint8Array(arr.length * 4), d = new DataView(o.buffer); for (let i = 0; i < arr.length; i++) d.setUint32(i * 4, arr[i]); return o; };
+    const _dsc = (tag, ...p) => { const b = _cat(p); return _cat([Uint8Array.of(tag, b.length), b]); };
+    const _toU8 = b => b instanceof ArrayBuffer ? new Uint8Array(b.slice(0)) : new Uint8Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+    const _MATRIX = _u32(0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000);
+    function _runs(deltas) { const o = []; deltas.forEach(d => { if (o.length && o[o.length - 1][1] === d) o[o.length - 1][0]++; else o.push([1, d]); }); return o; }
+    function _trak(id, kind, w, h, timescale, durTicks, durMs, entry, deltas, sizes, offsets, keys) {
+      const v = kind === 'vide', rn = _runs(deltas), stts = _fbox('stts', 0, 0, _u32(rn.length), ...rn.map(r => _u32(r[0], r[1])));
+      const stbl = _box('stbl', _fbox('stsd', 0, 0, _u32(1), entry), stts, _fbox('stsc', 0, 0, _u32(1, 1, 1, 1)), _fbox('stsz', 0, 0, _u32(0, sizes.length), _list32(sizes)), _fbox('stco', 0, 0, _u32(offsets.length), _list32(offsets)),
+        ...(keys ? [_fbox('stss', 0, 0, _u32(keys.length), _list32(keys))] : []));
+      return _box('trak',
+        _fbox('tkhd', 0, 3, _u32(0, 0, id, 0, durMs), _zeros(8), _u16(0, 0, v ? 0 : 0x100, 0), _MATRIX, _u32(v ? w * 65536 : 0, v ? h * 65536 : 0)),
+        _box('mdia', _fbox('mdhd', 0, 0, _u32(0, 0, timescale, durTicks), _u16(0x55c4, 0)),
+          _fbox('hdlr', 0, 0, _u32(0), _str(kind), _zeros(12), _str(v ? 'Video\0' : 'Sound\0')),
+          _box('minf', v ? _fbox('vmhd', 0, 1, _u16(0, 0, 0, 0)) : _fbox('smhd', 0, 0, _u16(0, 0)), _box('dinf', _fbox('dref', 0, 0, _u32(1), _fbox('url ', 0, 1))), stbl)));
+    }
+    function muxMp4(V, A) {
+      const FT = 1000, n = V.chunks.length, vDur = n * FT, vMs = Math.round(n / V.fps * 1000);
+      const items = V.chunks.map((c, i) => ({ t: i / V.fps, d: c.d, v: 1 }));
+      let aTicks = 0; if (A) A.chunks.forEach(c => { items.push({ t: aTicks / A.timescale, d: c.d, v: 0 }); aTicks += c.n; });
+      items.sort((x, y) => x.t - y.t || y.v - x.v);
+      const ftyp = _box('ftyp', _str('isom'), _u32(512), _str('isom'), _str('iso2'), _str('avc1'), _str('mp41'));
+      const aMs = A ? Math.round(aTicks / A.timescale * 1000) : 0;
+      const build = base => {
+        let pos = base; const vo = [], ao = [];
+        items.forEach(it => { (it.v ? vo : ao).push(pos); pos += it.d.length; });
+        const vEntry = _box('avc1', _zeros(6), _u16(1), _zeros(16), _u16(V.w, V.h), _u32(0x00480000, 0x00480000, 0), _u16(1), _zeros(32), _u16(0x18, 0xffff), _box('avcC', V.desc));
+        const keys = []; V.chunks.forEach((c, i) => { if (c.key) keys.push(i + 1); });
+        const traks = [_trak(1, 'vide', V.w, V.h, V.fps * FT, vDur, vMs, vEntry, V.chunks.map(() => FT), V.chunks.map(c => c.d.length), vo, keys)];
+        if (A) {
+          const ext = A.kind === 'aac' ? _fbox('esds', 0, 0, _dsc(3, _u16(1), Uint8Array.of(0), _dsc(4, Uint8Array.of(0x40, 0x15), _zeros(3), _u32(192000, 192000), _dsc(5, A.desc)), _dsc(6, Uint8Array.of(2)))) : _box('dOps', Uint8Array.of(0, A.ch), _u16(A.preSkip), _u32(A.sr), _u16(0), Uint8Array.of(0));
+          const aEntry = _box(A.kind === 'aac' ? 'mp4a' : 'Opus', _zeros(6), _u16(1), _zeros(8), _u16(A.ch, 16, 0, 0), _u32(A.timescale * 65536), ext);
+          traks.push(_trak(2, 'soun', 0, 0, A.timescale, aTicks, aMs, aEntry, A.chunks.map(c => c.n), A.chunks.map(c => c.d.length), ao, null));
+        }
+        return _box('moov', _fbox('mvhd', 0, 0, _u32(0, 0, 1000, Math.max(vMs, aMs), 0x10000), _u16(0x100, 0), _zeros(8), _MATRIX, _zeros(24), _u32(A ? 3 : 2)), ...traks);
+      };
+      const moovSize = build(0).length, total = items.reduce((a, it) => a + it.d.length, 0);
+      const moov = build(ftyp.length + moovSize + 8);
+      return new Blob([ftyp, moov, _u32(total + 8), _str('mdat'), ...items.map(it => it.d)], { type: 'video/mp4' });
+    }
+    const yieldNow = () => new Promise(r => { const mc = new MessageChannel(); mc.port1.onmessage = () => r(); mc.port2.postMessage(0); });
+    const fmtMMSS = sec => { sec = Math.max(0, Math.round(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
+    let exportCancel = false;
+
     async function exportVideo() {
+      if (state.isExporting) { exportCancel = true; return; }
+      if (!window.VideoEncoder || !window.VideoFrame) return exportVideoRealtime();
+      const progWrap = document.getElementById('export-progress-wrap');
+      const progBar = document.getElementById('export-progress-bar');
+      const progPct = document.getElementById('export-progress-pct');
+      const progTxt = document.getElementById('export-progress-text');
+      const btns = ['btn-export-video', 'btn-export-video-side'].map(id => document.getElementById(id)).filter(Boolean);
+      const btnLabels = btns.map(b => b.innerHTML);
+      const origTitle = document.title;
+      const wasPlaying = state.playing;
+      let venc = null, aenc = null;
+      const t0 = performance.now(); let ph0 = t0;
+      const prog = (f, label, pf) => {
+        const k = pf != null ? pf : f, el = (performance.now() - ph0) / 1000;
+        const left = k > 0.02 ? el * (1 - k) / k : null;
+        const pct = Math.min(99, Math.floor(f * 100));
+        progBar.style.width = pct + '%'; progPct.textContent = pct + '%';
+        progTxt.textContent = label + (left === null ? ' · đang tính thời gian còn lại…' : ' · còn khoảng ' + fmtMMSS(left));
+        document.title = pct + '% · Đang xuất video';
+        btns.forEach(b => { b.textContent = '✕ Huỷ · ' + pct + '%'; });
+      };
+      const chk = () => { if (exportCancel) throw new Error('__cancel'); };
+      try {
+        state.isExporting = true; exportCancel = false;
+        state.playing = false; updatePlayButtonUI();
+        setViewMode('script');
+        btns.forEach(b => { b.textContent = '✕ Huỷ · 0%'; });
+        progWrap.classList.remove('hidden');
+        try {
+          await Promise.all([document.fonts.load('700 60px Caveat'), document.fonts.load('900 60px Inter'), document.fonts.load('700 60px Inter'), document.fonts.load('700 60px "JetBrains Mono"')]);
+          await document.fonts.ready;
+        } catch (e) {}
+        showToast('Đang xuất video — bạn có thể chuyển sang tab khác, xong sẽ tự tải về.', 'info');
+        const { w, h } = getExportDimensions();
+        const FPS = 30, DUR = state.totalDuration, N = Math.ceil(DUR * FPS);
+
+        // 1) Âm thanh
+        let A = null, warn = '';
+        if (state.audioEnabled) {
+          prog(0, 'Đang dựng nhạc & âm thanh');
+          audioEngine.init();
+          const buf = await audioEngine.renderOffline(DUR, f => prog(0.04 * f, 'Đang dựng nhạc & âm thanh'));
+          chk();
+          if (buf && window.AudioEncoder && window.AudioData) {
+            let pick = null;
+            for (const [kind, codec] of [['aac', 'mp4a.40.2'], ['opus', 'opus']]) {
+              try { const c = { codec, sampleRate: buf.sampleRate, numberOfChannels: 2, bitrate: 192000 }; if ((await AudioEncoder.isConfigSupported(c)).supported) { pick = { kind, c }; break; } } catch (e) {}
+            }
+            if (!pick) warn = ' (trình duyệt không mã hoá được âm thanh nên video không có tiếng)';
+            else {
+              const ach = [], out = { kind: pick.kind, ch: 2, sr: buf.sampleRate, timescale: pick.kind === 'aac' ? buf.sampleRate : 48000, preSkip: 312, desc: null, chunks: ach };
+              let aerr = null;
+              aenc = new AudioEncoder({ output: (ch, meta) => {
+                const d = new Uint8Array(ch.byteLength); ch.copyTo(d);
+                ach.push({ d, n: ch.duration ? Math.round(ch.duration * out.timescale / 1e6) : 1024 });
+                if (meta && meta.decoderConfig && meta.decoderConfig.description && !out.desc) {
+                  out.desc = _toU8(meta.decoderConfig.description);
+                  if (pick.kind === 'opus' && out.desc.length >= 12 && String.fromCharCode(...out.desc.slice(0, 8)) === 'OpusHead') out.preSkip = out.desc[10] | (out.desc[11] << 8);
+                }
+              }, error: e => { aerr = e; } });
+              aenc.configure(pick.c);
+              const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L, BL = 4096, nS = Math.min(buf.length, Math.ceil(DUR * buf.sampleRate));
+              for (let off = 0; off < nS; off += BL) {
+                chk(); if (aerr) throw aerr;
+                const len = Math.min(BL, nS - off), data = new Float32Array(len * 2);
+                for (let i = 0; i < len; i++) { data[i] = L[off + i]; data[len + i] = R[off + i]; }
+                const ad = new AudioData({ format: 'f32-planar', sampleRate: buf.sampleRate, numberOfFrames: len, numberOfChannels: 2, timestamp: Math.round(off / buf.sampleRate * 1e6), data });
+                aenc.encode(ad); ad.close();
+                if (aenc.encodeQueueSize > 20) await yieldNow();
+                if ((off / BL) % 40 === 0) { prog(0.04 + 0.02 * off / nS, 'Đang xử lý âm thanh'); await yieldNow(); }
+              }
+              await aenc.flush(); aenc.close(); aenc = null; if (aerr) throw aerr;
+              if (!out.desc && pick.kind === 'aac') out.desc = Uint8Array.of(0x12, 0x10);
+              A = out;
+            }
+          } else if (!buf) warn = ' (không dựng được âm thanh)';
+        }
+
+        // 2) Hình
+        const big = w * h > 1920 * 1088;
+        const codecs = big ? ['avc1.640033', 'avc1.640032', 'avc1.4d0033'] : ['avc1.640028', 'avc1.4d0028', 'avc1.640032'];
+        let vp = null;
+        for (const codec of codecs) {
+          const c = { codec, width: w, height: h, bitrate: state.resolution === '1440p' ? 14e6 : 9e6, framerate: FPS, avc: { format: 'avc' } };
+          try { if ((await VideoEncoder.isConfigSupported(c)).supported) { vp = c; break; } } catch (e) {}
+        }
+        if (!vp) throw new Error('Trình duyệt không mã hoá được video H.264 — hãy dùng Chrome hoặc Edge bản mới.');
+        const recCanvas = document.createElement('canvas'); recCanvas.width = w; recCanvas.height = h;
+        const rctx = recCanvas.getContext('2d');
+        const vch = []; let vdesc = null, verr = null;
+        venc = new VideoEncoder({ output: (ch, meta) => {
+          const d = new Uint8Array(ch.byteLength); ch.copyTo(d); vch.push({ d, key: ch.type === 'key' });
+          if (meta && meta.decoderConfig && meta.decoderConfig.description && !vdesc) vdesc = _toU8(meta.decoderConfig.description);
+        }, error: e => { verr = e; } });
+        venc.configure(vp);
+        rigMemory.clear(); audioEngine.resetSfx(); state.lastSceneId = null;
+        ph0 = performance.now();
+        for (let i = 0; i < N; i++) {
+          chk(); if (verr) throw verr;
+          const t = Math.min(i / FPS, DUR - 0.001);
+          state.currentTime = t;
+          renderFrame(rctx, w, h, t, 1 / FPS);
+          const vf = new VideoFrame(recCanvas, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+          venc.encode(vf, { keyFrame: i % (FPS * 2) === 0 }); vf.close();
+          while (venc.encodeQueueSize > 8) { await new Promise(r => venc.addEventListener('dequeue', r, { once: true })); chk(); if (verr) throw verr; }
+          if (i % 6 === 0) {
+            prog(0.06 + 0.92 * i / N, `Đang dựng video ${w}×${h}`, i / N);
+            if (!document.hidden && i % 12 === 0) { ctx.drawImage(recCanvas, 0, 0, canvas.width, canvas.height); document.getElementById('time-current').textContent = formatTime(t); }
+            await yieldNow();
+          }
+        }
+        await venc.flush(); venc.close(); venc = null; if (verr) throw verr;
+        if (!vdesc) throw new Error('Không lấy được thông tin mã hoá video.');
+
+        // 3) Đóng gói & tải
+        prog(0.99, 'Đang đóng gói file MP4'); await yieldNow();
+        const blob = muxMp4({ w, h, fps: FPS, desc: vdesc, chunks: vch }, A);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url;
+        const slug = String(state.script.title || 'video').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'video';
+        a.download = `${slug}-${state.aspect === '9:16' ? '9x16-' : ''}${state.resolution}.mp4`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        progBar.style.width = '100%'; progPct.textContent = '100%';
+        const took = fmtMMSS((performance.now() - t0) / 1000);
+        progTxt.textContent = `Xong sau ${took} · MP4 ${(blob.size / 1048576).toFixed(1)} MB, dài ${fmtMMSS(DUR)} đã tải về máy${warn}`;
+        document.title = '✓ Xuất xong · ' + origTitle;
+        setTimeout(() => { if (document.title.startsWith('✓')) document.title = origTitle; }, 15000);
+        showToast('Xuất video thành công (.MP4)!', 'success');
+        window.__lastExport = { ok: true, size: blob.size, frames: N, audio: !!A, took };
+      } catch (e) {
+        const cancel = e && e.message === '__cancel';
+        progTxt.textContent = cancel ? 'Đã huỷ xuất video.' : 'Xuất video bị lỗi: ' + (e && e.message || e);
+        document.title = origTitle;
+        showToast(cancel ? 'Đã huỷ xuất video.' : 'Không thể xuất video: ' + (e && e.message || e), cancel ? 'info' : 'error');
+        window.__lastExport = { ok: false, msg: String(e && e.message || e) };
+      } finally {
+        try { if (venc && venc.state !== 'closed') venc.close(); } catch (e) {}
+        try { if (aenc && aenc.state !== 'closed') aenc.close(); } catch (e) {}
+        state.isExporting = false; exportCancel = false;
+        btns.forEach((b, i) => { b.innerHTML = btnLabels[i]; });
+        state.currentTime = 0; state.lastSceneId = null; audioEngine.resetSfx();
+        state.playing = wasPlaying; updatePlayButtonUI();
+      }
+    }
+
+    // Dự phòng cho trình duyệt cũ: ghi theo thời gian thực bằng MediaRecorder
+    async function exportVideoRealtime() {
       if (state.isExporting) return;
       if (typeof MediaRecorder === 'undefined') {
         showToast('Trình duyệt hiện tại chưa hỗ trợ MediaRecorder để xuất video.', 'error');
